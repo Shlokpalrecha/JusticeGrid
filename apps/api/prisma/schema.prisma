@@ -1,0 +1,16 @@
+// Placeholder schema for Phase 0 wiring only.
+// The complete data model (all enums and entities from spec §5) is built in
+// Phase 1 — this file is fully replaced then, with real migrations.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model PhaseZeroPlaceholder {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+}

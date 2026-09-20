@@ -1,0 +1,57 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+.turbo/
+apps/web/dist/
+apps/api/dist/
+# Safety net: TS build artifacts must never land next to their source (an
+# outDir/rootDir misconfiguration, e.g. a `tsc --watch` pointed at a
+# no-outDir config, emits them in place; a stray *.js next to a *.ts
+# confuses both tsc and typed ESLint).
+**/src/**/*.js
+**/src/**/*.js.map
+**/src/**/*.d.ts
+**/src/**/*.d.ts.map
+vitest.config.js
+vitest.config.js.map
+vitest.config.d.ts
+vitest.config.d.ts.map
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# test / coverage
+coverage/
+playwright-report/
+test-results/
+blob-report/
+*.lcov
+
+# prisma
+apps/api/prisma/dev.db
+apps/api/prisma/dev.db-journal
+
+# editors / os
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# diagrams render cache
+docs/diagrams/*.png.tmp
+
+# misc
+*.tsbuildinfo
+.eslintcache

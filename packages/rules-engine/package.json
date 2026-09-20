@@ -1,0 +1,29 @@
+{
+  "name": "@justicegrid/rules-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure, zero-dependency, fully deterministic workflow-priority rule engine for JusticeGrid. Imports nothing — no Prisma, no date libraries, no DB. Takes a plain input + injected `now` and returns a plain, explainable result.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3",
+    "vitest": "2.1.5",
+    "@vitest/coverage-v8": "2.1.5"
+  },
+  "dependencies": {}
+}

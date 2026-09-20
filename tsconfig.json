@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"]
+  },
+  // Only playwright.config.ts: it's the one root-level *.ts file lint-staged
+  // type-checks on commit. eslint.config.mjs and scripts/*.mjs are plain
+  // ESM JS tooling files — covered by Prettier, not typed linting (turbo's
+  // `pnpm lint` is scoped to workspace packages and never reaches them
+  // either).
+  "include": ["playwright.config.ts"]
+}
