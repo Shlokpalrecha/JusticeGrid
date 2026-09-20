@@ -4,8 +4,13 @@ import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 import cookieParser from "cookie-parser";
-import { randomUUID } from "node:crypto";
 import { env } from "./config/env.js";
+import { prisma } from "./lib/prisma.js";
+import { errorHandler, notFoundHandler } from "./middleware/errors.js";
+import { globalRateLimiter } from "./middleware/rateLimit.js";
+import { requestIdMiddleware } from "./middleware/requestId.js";
+import { auditRouter } from "./modules/audit/audit.routes.js";
+import { authRouter } from "./modules/auth/auth.routes.js";
 
 /**
  * JusticeGrid API — Express application.
@@ -14,14 +19,15 @@ import { env } from "./config/env.js";
  * review aid, not a legal or judicial decision. All actions require human
  * review. See JUSTICEGRID_BUILD_SPEC.md §1 for the full guardrails this
  * codebase must never violate.
- *
- * This is the Phase 0 skeleton: health checks only. Auth, RBAC, audit
- * middleware, and domain routes are wired in Phases 3–6.
  */
 export function createApp(): express.Express {
   const app = express();
 
   app.disable("x-powered-by");
+  // Trust the first proxy hop (Docker/nginx in front of the API) so
+  // `req.ip` reflects the real client address rather than the proxy's —
+  // used for rate limiting and audit log IP capture.
+  app.set("trust proxy", 1);
   app.use(helmet());
   app.use(
     cors({
@@ -32,38 +38,34 @@ export function createApp(): express.Express {
   app.use(compression());
   app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
-
-  app.use((req, res, next) => {
-    const requestId = (req.headers["x-request-id"] as string | undefined) ?? randomUUID();
-    req.headers["x-request-id"] = requestId;
-    res.setHeader("X-Request-Id", requestId);
-    next();
-  });
+  app.use(requestIdMiddleware);
+  app.use(globalRateLimiter);
 
   app.get("/api/v1/health", (_req, res) => {
     res.json({ success: true, data: { status: "ok" } });
   });
 
-  app.get("/api/v1/health/ready", (_req, res) => {
-    // Phase 3 extends this with a real DB connectivity check.
-    res.json({ success: true, data: { status: "ready" } });
+  app.get("/api/v1/health/ready", async (_req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ success: true, data: { status: "ready" } });
+    } catch {
+      res.status(503).json({
+        success: false,
+        error: { code: "INTERNAL_ERROR", message: "Database unavailable." },
+      });
+    }
   });
 
   app.get("/api/v1/version", (_req, res) => {
     res.json({ success: true, data: { name: "justicegrid-api", version: "0.1.0" } });
   });
 
-  // Central error handler — replaced with the full error-envelope
-  // middleware (spec §7) in Phase 3.
-  app.use(
-    (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-      console.error(err);
-      res.status(500).json({
-        success: false,
-        error: { code: "INTERNAL_ERROR", message: "An unexpected error occurred." },
-      });
-    },
-  );
+  app.use("/api/v1/auth", authRouter);
+  app.use("/api/v1/audit", auditRouter);
+
+  app.use(notFoundHandler);
+  app.use(errorHandler);
 
   return app;
 }

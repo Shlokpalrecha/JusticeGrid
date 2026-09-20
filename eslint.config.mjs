@@ -48,9 +48,40 @@ export default tseslint.config(
       ],
       "@typescript-eslint/consistent-type-imports": "error",
       "@typescript-eslint/no-floating-promises": "error",
-      "@typescript-eslint/no-misused-promises": "error",
+      // `checksVoidReturn.arguments: false`: Express 4's own types model
+      // a route handler as returning `void`, but with `express-async-
+      // errors` imported once in app.ts, an async handler returning
+      // `Promise<void>` is not just safe but the whole point — its
+      // rejection is forwarded to the error middleware automatically.
+      // Every controller/middleware in this API is written this way.
+      "@typescript-eslint/no-misused-promises": [
+        "error",
+        { checksVoidReturn: { arguments: false } },
+      ],
       "import/no-duplicates": "error",
       "no-console": ["warn", { allow: ["warn", "error"] }],
+    },
+  },
+  {
+    // Test files across every package: supertest's `Response.body` (and
+    // similar ad hoc test doubles/mocks) are typed `any` by the library
+    // itself — every `res.body.data.foo` access in an HTTP integration
+    // test trips the type-aware "unsafe" rules without adding real
+    // safety, since the assertions right below each access already
+    // check the runtime shape. Full type-checked strictness stays on
+    // for every non-test file.
+    files: ["**/*.test.ts", "**/*.test.tsx"],
+    rules: {
+      "@typescript-eslint/no-unsafe-member-access": "off",
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-argument": "off",
+      "@typescript-eslint/no-unsafe-call": "off",
+      // `expect(mock.someMethod).toHaveBeenCalledWith(...)` is the
+      // standard vitest/jest assertion pattern for a spied-on object
+      // method — this rule reads that property access as an "unbound
+      // method" that could lose its `this` binding if called directly,
+      // which is never what's actually happening here.
+      "@typescript-eslint/unbound-method": "off",
     },
   },
   {
