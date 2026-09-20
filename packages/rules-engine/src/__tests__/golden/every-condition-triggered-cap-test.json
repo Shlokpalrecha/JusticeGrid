@@ -1,0 +1,127 @@
+{
+  "caseId": "case-golden-4",
+  "rawScore": 20,
+  "totalScore": 15,
+  "priorityLevel": "HIGH",
+  "reasons": [
+    {
+      "ruleId": "rule-adjourn-3x",
+      "ruleCode": "R-ADJOURN-3X",
+      "ruleName": "Hearing adjourned 3+ consecutive times",
+      "category": "HEARING",
+      "points": 2,
+      "reasonText": "Hearing adjourned 4 consecutive times",
+      "evidence": {
+        "count": 3,
+        "consecutiveAdjournments": 4
+      },
+      "orderIndex": 0
+    },
+    {
+      "ruleId": "rule-bail-stalled",
+      "ruleCode": "R-BAIL-STALLED",
+      "ruleName": "Bail application pending without outcome",
+      "category": "ACTIVITY",
+      "points": 2,
+      "reasonText": "Bail application has been pending for 111 days with no outcome",
+      "evidence": {
+        "days": 21,
+        "bailStatus": "APPLICATION_FILED",
+        "daysSinceApplied": 111
+      },
+      "orderIndex": 1
+    },
+    {
+      "ruleId": "rule-custody-long",
+      "ruleCode": "R-CUSTODY-LONG",
+      "ruleName": "Extended custody duration — review follow-ups",
+      "category": "CUSTODY",
+      "points": 1,
+      "reasonText": "Case has been in custody status for over 180 days — flagged for team review of pending follow-up actions.",
+      "evidence": {
+        "days": 180,
+        "custodyType": "JUDICIAL",
+        "custodyDurationDays": 627
+      },
+      "orderIndex": 2
+    },
+    {
+      "ruleId": "rule-doc-missing",
+      "ruleCode": "R-DOC-MISSING",
+      "ruleName": "Mandatory document missing",
+      "category": "DOCUMENT",
+      "points": 3,
+      "reasonText": "1 mandatory document(s) missing",
+      "evidence": {
+        "missingDocumentCount": 1,
+        "missingDocumentTypes": ["FIR_COPY"]
+      },
+      "orderIndex": 3
+    },
+    {
+      "ruleId": "rule-no-assignee",
+      "ruleCode": "R-NO-ASSIGNEE",
+      "ruleName": "No user assigned to case",
+      "category": "ASSIGNMENT",
+      "points": 2,
+      "reasonText": "No team member is currently assigned to this case",
+      "evidence": {
+        "assignedToId": null
+      },
+      "orderIndex": 4
+    },
+    {
+      "ruleId": "rule-no-hearing-date",
+      "ruleCode": "R-NO-HEARING-DATE",
+      "ruleName": "Next hearing date not recorded",
+      "category": "HEARING",
+      "points": 3,
+      "reasonText": "No next hearing date has been recorded for this active case",
+      "evidence": {
+        "caseStatus": "TRIAL_ONGOING",
+        "isActive": true
+      },
+      "orderIndex": 5
+    },
+    {
+      "ruleId": "rule-order-unreviewed",
+      "ruleCode": "R-ORDER-UNREVIEWED",
+      "ruleName": "Latest order not reviewed",
+      "category": "HEARING",
+      "points": 3,
+      "reasonText": "The order from the hearing on 2026-08-01 has not yet been reviewed",
+      "evidence": {
+        "days": 7,
+        "hearingScheduledDate": "2026-08-01",
+        "daysSinceHearing": 50,
+        "orderReviewed": false
+      },
+      "orderIndex": 6
+    },
+    {
+      "ruleId": "rule-task-overdue",
+      "ruleCode": "R-TASK-OVERDUE",
+      "ruleName": "Follow-up task is overdue",
+      "category": "TASK",
+      "points": 4,
+      "reasonText": "1 follow-up task(s) overdue",
+      "evidence": {
+        "graceDays": 0,
+        "overdueTaskCount": 1,
+        "overdueTasks": [
+          {
+            "id": "t1",
+            "dueDate": "2026-07-01",
+            "daysOverdue": 81
+          }
+        ]
+      },
+      "orderIndex": 7
+    }
+  ],
+  "rulesetVersion": 1,
+  "engineVersion": "1.0.0",
+  "inputHash": "d4b678b43ccb41b4c9090c47dedd645a72e23991e50a77cb249bd9456741b246",
+  "evaluatedAtIso": "2026-09-20T04:00:00.000Z",
+  "explanation": "2 + 2 + 1 + 3 + 2 + 3 + 3 + 4 = 20 (capped to 15) → HIGH (≥ 7)"
+}

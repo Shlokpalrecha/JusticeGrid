@@ -1,0 +1,38 @@
+{
+  "caseId": "case-golden-3",
+  "rawScore": 5,
+  "totalScore": 5,
+  "priorityLevel": "MEDIUM",
+  "reasons": [
+    {
+      "ruleId": "rule-no-assignee",
+      "ruleCode": "R-NO-ASSIGNEE",
+      "ruleName": "No user assigned to case",
+      "category": "ASSIGNMENT",
+      "points": 2,
+      "reasonText": "No team member is currently assigned to this case",
+      "evidence": {
+        "assignedToId": null
+      },
+      "orderIndex": 0
+    },
+    {
+      "ruleId": "rule-no-hearing-date",
+      "ruleCode": "R-NO-HEARING-DATE",
+      "ruleName": "Next hearing date not recorded",
+      "category": "HEARING",
+      "points": 3,
+      "reasonText": "No next hearing date has been recorded for this active case",
+      "evidence": {
+        "caseStatus": "REGISTERED",
+        "isActive": true
+      },
+      "orderIndex": 1
+    }
+  ],
+  "rulesetVersion": 1,
+  "engineVersion": "1.0.0",
+  "inputHash": "e51442e4a6540d7d3cec060a82927a40e5dc76d1d9755905fdbf2786f1278380",
+  "evaluatedAtIso": "2026-09-20T04:00:00.000Z",
+  "explanation": "2 + 3 = 5 → MEDIUM (≥ 3)"
+}

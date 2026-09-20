@@ -1,0 +1,12 @@
+{
+  "caseId": "case-golden-2",
+  "rawScore": 0,
+  "totalScore": 0,
+  "priorityLevel": "ROUTINE",
+  "reasons": [],
+  "rulesetVersion": 1,
+  "engineVersion": "1.0.0",
+  "inputHash": "bb0c48916afc848b6ce355aa936fd3f78b95dd42073b31c3c5a2b1f7b0e1fe49",
+  "evaluatedAtIso": "2026-09-20T04:00:00.000Z",
+  "explanation": "No time-sensitive workflow condition triggered"
+}

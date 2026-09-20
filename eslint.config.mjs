@@ -61,13 +61,12 @@ export default tseslint.config(
     files: ["packages/rules-engine/src/**/*.ts"],
     ignores: ["packages/rules-engine/src/**/__tests__/**"],
     rules: {
-      "no-restricted-globals": [
-        "error",
-        {
-          name: "Date",
-          message: "Inject `now: Date` instead of reading wall-clock time in the rules engine.",
-        },
-      ],
+      // Only the zero-arg `new Date()` and `Date.now()` read wall-clock
+      // time — both banned. `new Date(x)` WITH an argument (e.g. shifting
+      // an injected `now` by a fixed offset for Asia/Kolkata maths) is
+      // legitimate date arithmetic and must stay legal, so this is
+      // `no-restricted-syntax` only — a blanket `no-restricted-globals`
+      // on the `Date` identifier would also flag that legitimate form.
       "no-restricted-syntax": [
         "error",
         {

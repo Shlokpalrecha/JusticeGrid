@@ -1,7 +1,31 @@
 // Public entry point for @justicegrid/rules-engine.
+//
 // This package is pure and dependency-free: it must never import Prisma,
-// date libraries, or reach into the database. See §6.1 of the build spec.
-export { ENGINE_VERSION } from "./version.js";
+// date libraries, or reach into the database (spec §4, §6.1). It takes a
+// plain CaseEvaluationInput plus an injected `now: Date` and returns a
+// plain, explainable, fully deterministic EvaluationResult.
 
-// evaluateCase, buildQueue, and all supporting types/utilities are added in
-// Phase 2 as the condition set, scoring, ordering, and hashing are built out.
+export { ENGINE_VERSION } from "./version.js";
+export { evaluateCase, buildQueue } from "./evaluate.js";
+export { computeScore } from "./score.js";
+export type { ScoreResult } from "./score.js";
+export { buildExplanation, renderReasonText } from "./explain.js";
+export { computeInputHash, canonicalJson, sha256Hex } from "./hash.js";
+export { toKolkataDateString, normalizeDateString, daysBetween, isWithinDays } from "./date.js";
+export { CONDITION_EVALUATORS } from "./conditions.js";
+export type { ConditionEvaluator } from "./conditions.js";
+
+export type {
+  CaseEvaluationInput,
+  ConditionResult,
+  ConditionType,
+  DocumentInput,
+  EvaluationResult,
+  LastHearingInput,
+  PriorityLevel,
+  RuleDefinition,
+  RuleParams,
+  RulesetConfig,
+  TaskInput,
+  TriggeredReasonResult,
+} from "./types.js";
