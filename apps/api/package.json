@@ -14,11 +14,11 @@
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:migrate:deploy": "prisma migrate deploy",
-    "db:reset": "prisma migrate reset --force",
-    "db:seed": "tsx prisma/seed/index.ts",
-    "db:studio": "prisma studio"
+    "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "db:migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
+    "db:reset": "dotenv -e ../../.env -- prisma migrate reset --force",
+    "db:seed": "dotenv -e ../../.env -- tsx prisma/seed/index.ts",
+    "db:studio": "dotenv -e ../../.env -- prisma studio"
   },
   "prisma": {
     "seed": "tsx prisma/seed/index.ts"
@@ -50,6 +50,7 @@
     "typescript": "5.6.3",
     "tsx": "4.19.2",
     "prisma": "5.22.0",
+    "dotenv-cli": "7.4.2",
     "vitest": "2.1.5",
     "@vitest/coverage-v8": "2.1.5",
     "supertest": "7.0.0",

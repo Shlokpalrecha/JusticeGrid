@@ -1,6 +1,15 @@
-// Placeholder schema for Phase 0 wiring only.
-// The complete data model (all enums and entities from spec §5) is built in
-// Phase 1 — this file is fully replaced then, with real migrations.
+// JusticeGrid data model — spec §5.
+//
+// Guardrails this schema must never violate (spec §1):
+//   - Person records are pseudonymous and synthetic-only (isSynthetic is
+//     enforced true both here via a CHECK constraint added in a follow-up
+//     migration, and at the Zod layer in packages/shared).
+//   - No field here stores a "risk score", "bail recommendation" or
+//     anything resembling a judgment about a person — PriorityEvaluation
+//     scores *workflow attention*, not people.
+//   - AuditLog is append-only and tamper-evident (hash-chained); the API
+//     never exposes update/delete routes for it (enforced in Phase 3+).
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,7 +19,653 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model PhaseZeroPlaceholder {
+// ─────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  LEGAL_PROFESSIONAL
+  AUDITOR
+}
+
+enum CaseStatus {
+  REGISTERED
+  UNDER_INVESTIGATION
+  CHARGES_FRAMED
+  TRIAL_ONGOING
+  BAIL_PENDING
+  BAIL_GRANTED
+  DISPOSED
+  TRANSFERRED
+  CLOSED
+}
+
+enum CustodyType {
+  JUDICIAL
+  POLICE
+  INTERIM_BAIL
+  RELEASED
+  NOT_IN_CUSTODY
+}
+
+enum BailStatus {
+  NOT_APPLIED
+  APPLICATION_PREPARED
+  APPLICATION_FILED
+  HEARING_SCHEDULED
+  GRANTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum HearingType {
+  FIRST_PRODUCTION
+  REMAND_EXTENSION
+  CHARGE_FRAMING
+  BAIL_HEARING
+  EVIDENCE
+  ARGUMENTS
+  JUDGMENT
+  MISCELLANEOUS
+}
+
+enum HearingOutcome {
+  HELD
+  ADJOURNED
+  NOT_PRODUCED
+  PARTIALLY_HEARD
+  ORDER_PASSED
+  CANCELLED
+  PENDING
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  BLOCKED
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskCategory {
+  DOCUMENT_PREPARATION
+  CLIENT_CONTACT
+  COURT_FILING
+  ORDER_REVIEW
+  BAIL_APPLICATION
+  EVIDENCE_COLLECTION
+  COORDINATION
+  FOLLOW_UP
+  OTHER
+}
+
+enum DocumentStatus {
+  MISSING
+  REQUESTED
+  RECEIVED
+  VERIFIED
+  REJECTED
+  NOT_APPLICABLE
+}
+
+enum DocumentType {
+  FIR_COPY
+  CHARGE_SHEET
+  REMAND_ORDER
+  BAIL_APPLICATION
+  BAIL_ORDER
+  SURETY_DOCUMENTS
+  IDENTITY_PROOF
+  MEDICAL_REPORT
+  VAKALATNAMA
+  PREVIOUS_ORDERS
+  WITNESS_LIST
+  CUSTODY_CERTIFICATE
+  OTHER
+}
+
+enum PriorityLevel {
+  ROUTINE
+  MEDIUM
+  HIGH
+}
+
+enum RuleCategory {
+  HEARING
+  TASK
+  DOCUMENT
+  DATA_QUALITY
+  ASSIGNMENT
+  CUSTODY
+  ACTIVITY
+}
+
+enum ConditionType {
+  HEARING_WITHIN_DAYS
+  HEARING_WITHIN_DAYS_AND_PREP_INCOMPLETE
+  HEARING_DATE_MISSING
+  TASK_OVERDUE
+  TASK_DUE_WITHIN_DAYS
+  TASK_UNASSIGNED
+  TASK_BLOCKED_OVER_DAYS
+  MANDATORY_DOCUMENT_MISSING
+  DOCUMENT_UNVERIFIED_OVER_DAYS
+  CASE_FIELD_INCOMPLETE
+  NO_ASSIGNEE
+  ORDER_NOT_REVIEWED_AFTER_DAYS
+  CUSTODY_DURATION_EXCEEDS_DAYS
+  NO_ACTIVITY_SINCE_DAYS
+  BAIL_APPLICATION_STALLED_DAYS
+  HEARING_ADJOURNED_CONSECUTIVELY
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGIN_FAILED
+  LOGOUT
+  ASSIGN
+  UNASSIGN
+  STATUS_CHANGE
+  RULE_TOGGLE
+  RULE_WEIGHT_CHANGE
+  THRESHOLD_CHANGE
+  PRIORITY_RECOMPUTE
+  EXPORT
+  ACCESS_DENIED
+  PASSWORD_CHANGE
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_DUE_SOON
+  TASK_OVERDUE
+  HEARING_APPROACHING
+  CASE_ASSIGNED
+  PRIORITY_ESCALATED
+  DOCUMENT_REQUESTED
+}
+
+/// Who/what caused a PriorityEvaluation to run (spec §6.7's re-evaluation
+/// triggers). Not enumerated explicitly in spec §5's enum block, but
+/// required by the PriorityEvaluation.triggeredBy field spec §5 lists.
+enum EvaluationTrigger {
+  SYSTEM
+  USER
+  SCHEDULED
+  RULE_CHANGE
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Identity & access
+// ─────────────────────────────────────────────────────────────────────────
+
+model User {
+  id                  String    @id @default(cuid())
+  email               String    @unique
+  passwordHash        String
+  fullName            String
+  employeeCode        String    @unique
+  role                Role
+  designation         String?
+  phone               String?
+  isActive            Boolean   @default(true)
+  mustChangePassword  Boolean   @default(false)
+  lastLoginAt         DateTime?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  createdById         String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+
+  createdBy    User?  @relation("UserCreatedByUser", fields: [createdById], references: [id], onDelete: SetNull)
+  createdUsers User[] @relation("UserCreatedByUser")
+
+  refreshTokens         RefreshToken[]
+  assignedCases         Case[]                  @relation("CaseAssignedTo")
+  casesAssignedByMe     Case[]                  @relation("CaseAssignedBy")
+  casesCreated          Case[]                  @relation("CaseCreatedBy")
+  hearingsRecorded      Hearing[]               @relation("HearingRecordedBy")
+  ordersReviewed        Hearing[]               @relation("HearingOrderReviewedBy")
+  tasksCreated          Task[]                  @relation("TaskCreatedBy")
+  tasksAssigned         Task[]                  @relation("TaskAssignedTo")
+  tasksCompleted        Task[]                  @relation("TaskCompletedBy")
+  documentsVerified     DocumentRequirement[]   @relation("DocumentVerifiedBy")
+  notesAuthored         CaseNote[]              @relation("CaseNoteAuthor")
+  assignmentsFrom       CaseAssignmentHistory[] @relation("AssignmentFromUser")
+  assignmentsTo         CaseAssignmentHistory[] @relation("AssignmentToUser")
+  assignmentsChanged    CaseAssignmentHistory[] @relation("AssignmentChangedBy")
+  rulesCreated          Rule[]                  @relation("RuleCreatedBy")
+  rulesUpdated          Rule[]                  @relation("RuleUpdatedBy")
+  ruleVersionsChanged   RuleVersion[]           @relation("RuleVersionChangedBy")
+  rulesetConfigsCreated RulesetConfig[]         @relation("RulesetConfigActivatedBy")
+  evaluationsTriggered  PriorityEvaluation[]    @relation("PriorityEvaluationTriggeredBy")
+  auditEntries          AuditLog[]              @relation("AuditLogActor")
+  notifications         Notification[]
+  savedFilters          SavedFilter[]
+
+  @@index([role])
+  @@index([isActive])
+}
+
+/// Rotation + reuse detection (spec §8.2): reusing a rotated token revokes
+/// the whole family (all tokens sharing familyId).
+model RefreshToken {
+  id                  String    @id @default(cuid())
+  userId              String
+  tokenHash           String    @unique
+  familyId            String
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  replacedByTokenHash String?
+  userAgent           String?
+  ipAddress           String?
+  createdAt           DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Case domain
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Pseudonymous undertrial record. isSynthetic is enforced true by both a
+/// Postgres CHECK constraint (see migrations/*_add_person_synthetic_check)
+/// and a Zod refinement in packages/shared — defense in depth for spec §1.5.
+model Person {
+  id                        String   @id @default(cuid())
+  aliasCode                 String   @unique
+  displayName               String
+  ageBand                   String
+  gender                    String
+  isSynthetic               Boolean  @default(true)
+  languagePreference        String?
+  hasDisability             Boolean  @default(false)
+  isFirstTimeOffender       Boolean  @default(false)
+  economicallyWeakerSection Boolean  @default(false)
+  emergencyContactAlias     String?
+  notes                     String?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  cases Case[]
+}
+
+model Case {
+  id                   String         @id @default(cuid())
+  caseRef              String         @unique
+  personId             String
+  courtName            String
+  courtType            String
+  district             String
+  state                String
+  policeStationAlias   String
+  firNumberSynthetic   String
+  firYear              Int
+  caseStatus           CaseStatus     @default(REGISTERED)
+  custodyType          CustodyType
+  custodyStartDate     DateTime?
+  bailStatus           BailStatus     @default(NOT_APPLIED)
+  bailAppliedDate      DateTime?
+  assignedToId         String?
+  assignedAt           DateTime?
+  assignedById         String?
+  createdById          String
+  lastHearingDate      DateTime?
+  nextHearingDate      DateTime?
+  lastActivityAt       DateTime       @default(now())
+  // Deliberately denormalized (see docs/03-data-model.md, written in
+  // Phase 12): the queue is read far more often than cases are written,
+  // and re-deriving every case's score from scratch on every list/filter
+  // request would mean re-running the rule engine per request instead of
+  // per write. PriorityEvaluation remains the source of truth/history.
+  currentPriorityLevel PriorityLevel?
+  currentPriorityScore Int?
+  lastEvaluatedAt      DateTime?
+  isArchived           Boolean        @default(false)
+  archivedReason       String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  deletedAt            DateTime?
+
+  person     Person @relation(fields: [personId], references: [id], onDelete: Restrict)
+  assignedTo User?  @relation("CaseAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedBy User?  @relation("CaseAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+  createdBy  User   @relation("CaseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  charges             Charge[]
+  hearings            Hearing[]
+  tasks               Task[]
+  documents           DocumentRequirement[]
+  notes               CaseNote[]
+  assignmentHistory   CaseAssignmentHistory[]
+  priorityEvaluations PriorityEvaluation[]
+
+  @@index([nextHearingDate])
+  @@index([assignedToId])
+  @@index([caseStatus])
+  @@index([currentPriorityScore])
+  @@index([assignedToId, currentPriorityScore])
+  @@index([lastActivityAt])
+}
+
+model Charge {
+  id             String   @id @default(cuid())
+  caseId         String
+  actName        String
+  sectionCode    String
+  description    String?
+  isBailableFlag Boolean
+  severityBand   String
+  createdAt      DateTime @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+}
+
+model Hearing {
+  id                String         @id @default(cuid())
+  caseId            String
+  scheduledDate     DateTime
+  actualDate        DateTime?
+  hearingType       HearingType
+  purpose           String?
+  outcome           HearingOutcome @default(PENDING)
+  wasProduced       Boolean        @default(false)
+  adjournmentReason String?
+  orderSummary      String?
+  orderReviewed     Boolean        @default(false)
+  orderReviewedAt   DateTime?
+  orderReviewedById String?
+  nextHearingDate   DateTime?
+  recordedById      String
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  case            Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  recordedBy      User  @relation("HearingRecordedBy", fields: [recordedById], references: [id], onDelete: Restrict)
+  orderReviewedBy User? @relation("HearingOrderReviewedBy", fields: [orderReviewedById], references: [id], onDelete: SetNull)
+
+  @@index([caseId, scheduledDate])
+}
+
+/// isPreparationTask marks a task as hearing-preparation, consumed by the
+/// HEARING_WITHIN_DAYS_AND_PREP_INCOMPLETE rule condition (spec §6.3).
+model Task {
+  id                String       @id @default(cuid())
+  caseId            String
+  title             String
+  description       String?
+  category          TaskCategory
+  assignedToId      String?
+  createdById       String
+  dueDate           DateTime
+  status            TaskStatus   @default(PENDING)
+  blockedReason     String?
+  completedAt       DateTime?
+  completedById     String?
+  completionNote    String?
+  cancelledReason   String?
+  isPreparationTask Boolean      @default(false)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  case        Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  assignedTo  User? @relation("TaskAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdBy   User  @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  completedBy User? @relation("TaskCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+
+  @@index([caseId, status])
+  @@index([assignedToId, status, dueDate])
+  @@index([dueDate])
+}
+
+model DocumentRequirement {
+  id           String         @id @default(cuid())
+  caseId       String
+  documentType DocumentType
+  isMandatory  Boolean        @default(true)
+  status       DocumentStatus @default(MISSING)
+  requestedAt  DateTime?
+  receivedAt   DateTime?
+  verifiedAt   DateTime?
+  verifiedById String?
+  sourceNote   String?
+  remarks      String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  case       Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  verifiedBy User? @relation("DocumentVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@index([caseId, status])
+  @@index([caseId, documentType])
+}
+
+/// Append-only: no edit route, no updatedAt.
+model CaseNote {
+  id         String   @id @default(cuid())
+  caseId     String
+  authorId   String
+  body       String
+  isInternal Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  case   Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  author User @relation("CaseNoteAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([caseId, createdAt])
+}
+
+/// Append-only: no edit route, no updatedAt.
+model CaseAssignmentHistory {
+  id          String   @id @default(cuid())
+  caseId      String
+  fromUserId  String?
+  toUserId    String?
+  changedById String
+  reason      String?
+  changedAt   DateTime @default(now())
+
+  case      Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  fromUser  User? @relation("AssignmentFromUser", fields: [fromUserId], references: [id], onDelete: SetNull)
+  toUser    User? @relation("AssignmentToUser", fields: [toUserId], references: [id], onDelete: SetNull)
+  changedBy User  @relation("AssignmentChangedBy", fields: [changedById], references: [id], onDelete: Restrict)
+
+  @@index([caseId, changedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Rule engine configuration & history
+//
+// These tables hold the *configuration* the pure packages/rules-engine
+// package is fed at evaluation time (spec §4's architectural rule: the
+// engine package itself never touches Prisma). Rule/RulesetConfig rows are
+// mapped to the engine's plain RuleDefinition/RulesetConfig input shape by
+// the API layer in Phase 5.
+// ─────────────────────────────────────────────────────────────────────────
+
+model Rule {
+  id              String        @id @default(cuid())
+  code            String        @unique
+  name            String
+  description     String
+  category        RuleCategory
+  conditionType   ConditionType
+  params          Json
+  weight          Int
+  isEnabled       Boolean       @default(true)
+  displayTemplate String
+  severityHint    String?
+  version         Int           @default(1)
+  createdById     String
+  updatedById     String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  createdBy User          @relation("RuleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy User          @relation("RuleUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+  versions  RuleVersion[]
+
+  triggeredReasons TriggeredReason[]
+
+  @@index([category])
+  @@index([isEnabled])
+}
+
+/// Append-only version history — required because rule weights/params are
+/// admin-configurable at runtime (spec §5's RuleVersion comment).
+model RuleVersion {
+  id           String   @id @default(cuid())
+  ruleId       String
+  version      Int
+  snapshotJson Json
+  changedById  String
+  changeReason String?
+  changedAt    DateTime @default(now())
+
+  rule      Rule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  changedBy User @relation("RuleVersionChangedBy", fields: [changedById], references: [id], onDelete: Restrict)
+
+  @@index([ruleId, version])
+}
+
+/// Versioned, never mutated in place — changing thresholds creates a new
+/// row and deactivates the previous one (spec §5's RulesetConfig comment).
+model RulesetConfig {
+  id              String   @id @default(cuid())
+  version         Int      @unique
+  highThreshold   Int      @default(7)
+  mediumThreshold Int      @default(3)
+  maxScoreCap     Int?
+  isActive        Boolean  @default(false)
+  activatedAt     DateTime @default(now())
+  activatedById   String
+  notes           String?
+
+  activatedBy User @relation("RulesetConfigActivatedBy", fields: [activatedById], references: [id], onDelete: Restrict)
+
+  @@index([isActive])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Priority evaluations (the explainable output of packages/rules-engine)
+// ─────────────────────────────────────────────────────────────────────────
+
+model PriorityEvaluation {
+  id             String            @id @default(cuid())
+  caseId         String
+  evaluatedAt    DateTime          @default(now())
+  totalScore     Int
+  rawScore       Int
+  priorityLevel  PriorityLevel
+  rulesetVersion Int
+  engineVersion  String
+  inputHash      String
+  triggeredCount Int
+  durationMs     Int
+  triggeredBy    EvaluationTrigger
+  triggeredById  String?
+
+  case            Case              @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  triggeredByUser User?             @relation("PriorityEvaluationTriggeredBy", fields: [triggeredById], references: [id], onDelete: SetNull)
+  reasons         TriggeredReason[]
+
+  @@index([caseId, evaluatedAt(sort: Desc)])
+}
+
+model TriggeredReason {
+  id           String       @id @default(cuid())
+  evaluationId String
+  ruleId       String?
+  ruleCode     String
+  ruleName     String
+  points       Int
+  category     RuleCategory
+  reasonText   String
+  evidenceJson Json
+  orderIndex   Int
+
+  evaluation PriorityEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  rule       Rule?              @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@index([evaluationId, orderIndex])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Audit (append-only, hash-chained — spec §5/§8.9). No update or delete
+// routes are ever exposed for this table (enforced at the API layer).
+// ─────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id            String      @id @default(cuid())
+  sequence      BigInt      @unique @default(autoincrement())
+  actorId       String?
+  actorEmail    String
+  actorRole     Role?
+  action        AuditAction
+  entityType    String
+  entityId      String?
+  entityLabel   String
+  summary       String
+  beforeJson    Json?
+  afterJson     Json?
+  changedFields String[]
+  ipAddress     String?
+  userAgent     String?
+  requestId     String
+  success       Boolean
+  failureReason String?
+  previousHash  String
+  hash          String
+  createdAt     DateTime    @default(now())
+
+  actor User? @relation("AuditLogActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Notifications & saved filters
+// ─────────────────────────────────────────────────────────────────────────
+
+model Notification {
+  id                String           @id @default(cuid())
+  userId            String
+  type              NotificationType
+  title             String
+  body              String
+  relatedEntityType String?
+  relatedEntityId   String?
+  isRead            Boolean          @default(false)
+  readAt            DateTime?
+  createdAt         DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+}
+
+model SavedFilter {
   id        String   @id @default(cuid())
+  userId    String
+  name      String
+  queryJson Json
+  isShared  Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
