@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import type { Request, Response } from "express";
 import { AppError } from "@justicegrid/shared";
 import { errorHandler, notFoundHandler } from "./errors.js";
@@ -40,6 +41,37 @@ describe("errorHandler", () => {
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ error: expect.objectContaining({ details }) }),
+    );
+  });
+
+  it("maps a Prisma P2002 unique-constraint error to a CONFLICT envelope", () => {
+    const prismaErr = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+      code: "P2002",
+      clientVersion: "test",
+      meta: { target: ["caseRef"] },
+    });
+    const req = mockReq();
+    const res = mockRes();
+    errorHandler(prismaErr, req, res, vi.fn());
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({ code: "CONFLICT" }),
+      }),
+    );
+  });
+
+  it("other Prisma known-request errors (not P2002) fall through to a generic INTERNAL_ERROR", () => {
+    const prismaErr = new Prisma.PrismaClientKnownRequestError("Record not found", {
+      code: "P2025",
+      clientVersion: "test",
+    });
+    const req = mockReq();
+    const res = mockRes();
+    errorHandler(prismaErr, req, res, vi.fn());
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.objectContaining({ code: "INTERNAL_ERROR" }) }),
     );
   });
 

@@ -11,6 +11,11 @@ import { globalRateLimiter } from "./middleware/rateLimit.js";
 import { requestIdMiddleware } from "./middleware/requestId.js";
 import { auditRouter } from "./modules/audit/audit.routes.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
+import { casesRouter } from "./modules/cases/cases.routes.js";
+import { hearingsRouter } from "./modules/hearings/hearings.routes.js";
+import { personsRouter } from "./modules/persons/persons.routes.js";
+import { tasksRouter } from "./modules/tasks/tasks.routes.js";
+import { documentsRouter } from "./modules/documents/documents.routes.js";
 
 /**
  * JusticeGrid API — Express application.
@@ -63,6 +68,11 @@ export function createApp(): express.Express {
 
   app.use("/api/v1/auth", authRouter);
   app.use("/api/v1/audit", auditRouter);
+  app.use("/api/v1/persons", personsRouter);
+  app.use("/api/v1/cases", casesRouter);
+  app.use("/api/v1/hearings", hearingsRouter);
+  app.use("/api/v1/tasks", tasksRouter);
+  app.use("/api/v1/documents", documentsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

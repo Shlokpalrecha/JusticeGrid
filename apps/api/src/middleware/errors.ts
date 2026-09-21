@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 import { AppError, type ApiErrorResponse } from "@justicegrid/shared";
 import { logger } from "../lib/logger.js";
@@ -10,11 +11,15 @@ import { getRequestId } from "./requestId.js";
  * promise from an `async` handler reaches here exactly like a thrown
  * synchronous error would.
  *
- * Only `AppError` (packages/shared) and `ZodError` (surfaced when a
- * handler validates something ad hoc, outside the `validate` middleware)
- * are given a specific envelope; anything else is logged with full
- * detail server-side and returned to the client as a generic
- * INTERNAL_ERROR — never leaking a stack trace or implementation detail.
+ * `AppError` (packages/shared), `ZodError` (surfaced when a handler
+ * validates something ad hoc, outside the `validate` middleware), and
+ * Prisma's own known-request errors (P2002 unique-constraint violations
+ * → CONFLICT; anything else Prisma-specific stays INTERNAL_ERROR, since
+ * most Prisma error codes indicate a real server-side bug, not a
+ * client-correctable request) are each given a specific envelope;
+ * anything else is logged with full detail server-side and returned to
+ * the client as a generic INTERNAL_ERROR — never leaking a stack trace
+ * or implementation detail.
  */
 // The 4-arg signature (including the unused `_next`) is required for
 // Express to recognize this as error-handling middleware.
@@ -30,6 +35,23 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
       error: { code: err.code, message: err.message, details: err.details, requestId },
     };
     res.status(err.httpStatus).json(response);
+    return;
+  }
+
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+    const target = Array.isArray(err.meta?.target)
+      ? (err.meta.target as string[]).join(", ")
+      : "field";
+    const response: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: "CONFLICT",
+        message: `A record with this ${target} already exists.`,
+        details: [{ field: target, issue: "Already in use" }],
+        requestId,
+      },
+    };
+    res.status(409).json(response);
     return;
   }
 

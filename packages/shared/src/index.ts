@@ -22,3 +22,4 @@ export * from "./schemas/priority.js";
 export * from "./schemas/audit.js";
 export * from "./schemas/notification.js";
 export * from "./schemas/savedFilter.js";
+export * from "./schemas/timeline.js";

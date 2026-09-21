@@ -6,6 +6,16 @@ import {
   PriorityLevelSchema,
 } from "../enums.js";
 import { IdSchema, IsoDateTimeSchema } from "./common.js";
+import { PaginationQuerySchema } from "../envelope.js";
+import { PersonSchema } from "./person.js";
+import { UserRefSchema } from "./user.js";
+
+/** JG-YYYY-NNNN, e.g. "JG-2026-0001" (spec §5/§10). Client-supplied at
+ * creation, not server-generated — validated here so a malformed
+ * caseRef never reaches the database. */
+export const CaseRefSchema = z
+  .string()
+  .regex(/^JG-\d{4}-\d{4}$/, "caseRef must match JG-YYYY-NNNN, e.g. JG-2026-0001");
 
 export const CaseSchema = z.object({
   id: IdSchema,
@@ -43,7 +53,7 @@ export type CaseDto = z.infer<typeof CaseSchema>;
 
 export const CaseCreateInputSchema = z
   .object({
-    caseRef: z.string().min(1),
+    caseRef: CaseRefSchema,
     personId: IdSchema,
     courtName: z.string().min(1),
     courtType: z.string().min(1),
@@ -102,3 +112,63 @@ export const ChargeCreateInputSchema = z
   })
   .strict();
 export type ChargeCreateInput = z.infer<typeof ChargeCreateInputSchema>;
+
+export const CaseArchiveInputSchema = z
+  .object({
+    archivedReason: z.string().min(1),
+  })
+  .strict();
+export type CaseArchiveInput = z.infer<typeof CaseArchiveInputSchema>;
+
+/** GET /cases filter/sort/pagination params (spec §7). Every value is
+ * optional; an absent filter simply isn't applied. */
+export const CaseFilterQuerySchema = PaginationQuerySchema.extend({
+  q: z.string().min(1).optional(),
+  status: CaseStatusSchema.optional(),
+  priority: PriorityLevelSchema.optional(),
+  assignedTo: IdSchema.optional(),
+  hearingFrom: IsoDateTimeSchema.optional(),
+  hearingTo: IsoDateTimeSchema.optional(),
+  hasOverdueTasks: z.coerce.boolean().optional(),
+  missingDocuments: z.coerce.boolean().optional(),
+  unassigned: z.coerce.boolean().optional(),
+  custodyType: CustodyTypeSchema.optional(),
+  bailStatus: BailStatusSchema.optional(),
+  district: z.string().min(1).optional(),
+  court: z.string().min(1).optional(),
+  sort: z.enum(["priority", "nextHearing", "caseRef", "createdAt"]).default("priority"),
+}).strict();
+export type CaseFilterQuery = z.infer<typeof CaseFilterQuerySchema>;
+
+/** A page of the cases list — case rows plus enough embedded context
+ * (person alias/display name, assignee) for a table row without a
+ * second round-trip per row. */
+export const CaseListItemSchema = CaseSchema.extend({
+  person: PersonSchema.pick({ id: true, aliasCode: true, displayName: true, ageBand: true }),
+  assignedTo: UserRefSchema.nullable(),
+});
+export type CaseListItemDto = z.infer<typeof CaseListItemSchema>;
+
+/**
+ * `GET /cases/:id`'s "full aggregate" (spec §7): the case plus its
+ * person, charges, and assignee/creator — the Overview tab's data (spec
+ * §9 screen 5). Hearings/tasks/documents/notes each have their own
+ * dedicated list endpoints (`GET /cases/:id/hearings` etc.) rather than
+ * being embedded here, matching how spec §7 itself splits them out.
+ */
+export const CaseAggregateSchema = CaseSchema.extend({
+  person: PersonSchema,
+  charges: z.array(ChargeSchema),
+  assignedTo: UserRefSchema.nullable(),
+  createdBy: UserRefSchema,
+  // The Overview tab's "data-completeness meter" (spec §9 screen 5) —
+  // mirrors exactly the fields the default R-CASE-INCOMPLETE rule checks
+  // (spec §6.6: custodyStartDate, courtName, caseStatus, charges), so
+  // what the UI shows as "missing" is always what would actually trigger
+  // that rule once Phase 5 wires evaluation in.
+  fieldCompleteness: z.object({
+    checkedFields: z.array(z.string()),
+    missingFields: z.array(z.string()),
+  }),
+});
+export type CaseAggregateDto = z.infer<typeof CaseAggregateSchema>;

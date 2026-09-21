@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TaskCategorySchema, TaskStatusSchema } from "../enums.js";
 import { IdSchema, IsoDateTimeSchema } from "./common.js";
+import { PaginationQuerySchema } from "../envelope.js";
 
 export const TaskSchema = z.object({
   id: IdSchema,
@@ -44,7 +45,12 @@ export type TaskCreateInput = z.infer<typeof TaskCreateInputSchema>;
 
 export const TaskUpdateInputSchema = TaskCreateInputSchema.omit({ dueDate: true })
   .partial()
-  .extend({ dueDate: IsoDateTimeSchema.optional() })
+  .extend({
+    dueDate: IsoDateTimeSchema.optional(),
+    status: TaskStatusSchema.optional(),
+    blockedReason: z.string().optional(),
+    cancelledReason: z.string().optional(),
+  })
   .strict();
 export type TaskUpdateInput = z.infer<typeof TaskUpdateInputSchema>;
 
@@ -61,3 +67,21 @@ export const TaskReassignInputSchema = z
   })
   .strict();
 export type TaskReassignInput = z.infer<typeof TaskReassignInputSchema>;
+
+/** `GET /tasks` filter params (spec §7): `assignedTo=me` is handled by
+ * the service layer (resolved against the caller's own id), so it's
+ * typed here as a literal "me" alongside a real id. */
+export const TaskFilterQuerySchema = PaginationQuerySchema.extend({
+  assignedTo: z.union([IdSchema, z.literal("me")]).optional(),
+  status: TaskStatusSchema.optional(),
+  category: TaskCategorySchema.optional(),
+  dueBefore: IsoDateTimeSchema.optional(),
+  overdue: z.coerce.boolean().optional(),
+  caseId: IdSchema.optional(),
+}).strict();
+export type TaskFilterQuery = z.infer<typeof TaskFilterQuerySchema>;
+
+/** Task list items embed the parent case's ref so a flat task list (e.g.
+ * "My Tasks", spec §9 screen 6) can link back without a second fetch. */
+export const TaskListItemSchema = TaskSchema.extend({ caseRef: z.string() });
+export type TaskListItemDto = z.infer<typeof TaskListItemSchema>;

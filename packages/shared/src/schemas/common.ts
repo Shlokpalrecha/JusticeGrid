@@ -31,3 +31,8 @@ export const IsoDateTimeSchema = z.string().datetime({ offset: true });
 export const IsoDateSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "must be an ISO date (YYYY-MM-DD)");
+
+/** `:id`-style single-param route validation, reused by every module's
+ * `GET/PATCH /resource/:id`-shaped routes. */
+export const IdParamSchema = z.object({ id: IdSchema }).strict();
+export type IdParam = z.infer<typeof IdParamSchema>;

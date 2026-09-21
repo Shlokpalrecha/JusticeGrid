@@ -1,1 +1,9 @@
+# lint-staged's typed ESLint rules resolve apps/api and apps/web's
+# imports of @justicegrid/shared and @justicegrid/rules-engine through
+# their built dist/ output (workspace package resolution). If dist/ is
+# stale or missing — e.g. after a manual cache clean — every such import
+# type-checks as `any`, producing a wall of unrelated "unsafe" errors.
+# Rebuilding first (turbo, so already-fresh builds are skipped) makes
+# this class of failure impossible rather than something to remember.
+pnpm --filter @justicegrid/shared --filter @justicegrid/rules-engine run build
 pnpm exec lint-staged

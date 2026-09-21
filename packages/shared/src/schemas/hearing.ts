@@ -45,3 +45,26 @@ export type HearingCreateInput = z.infer<typeof HearingCreateInputSchema>;
 
 export const HearingUpdateInputSchema = HearingCreateInputSchema.partial().strict();
 export type HearingUpdateInput = z.infer<typeof HearingUpdateInputSchema>;
+
+export const HearingMarkOrderReviewedInputSchema = z
+  .object({
+    orderSummary: z.string().optional(),
+  })
+  .strict();
+export type HearingMarkOrderReviewedInput = z.infer<typeof HearingMarkOrderReviewedInputSchema>;
+
+/** `GET /hearings/upcoming?days=7` (spec §7). */
+export const HearingUpcomingQuerySchema = z
+  .object({
+    days: z.coerce.number().int().positive().max(365).default(7),
+  })
+  .strict();
+export type HearingUpcomingQuery = z.infer<typeof HearingUpcomingQuerySchema>;
+
+/** Wire shape for the upcoming-hearings list — includes enough case
+ * context (caseRef, assignee) to render without a second round trip. */
+export const UpcomingHearingItemSchema = HearingSchema.extend({
+  caseRef: z.string(),
+  assignedToId: IdSchema.nullable(),
+});
+export type UpcomingHearingItemDto = z.infer<typeof UpcomingHearingItemSchema>;

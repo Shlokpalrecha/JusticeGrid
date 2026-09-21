@@ -63,14 +63,15 @@ export default tseslint.config(
     },
   },
   {
-    // Test files across every package: supertest's `Response.body` (and
-    // similar ad hoc test doubles/mocks) are typed `any` by the library
-    // itself — every `res.body.data.foo` access in an HTTP integration
-    // test trips the type-aware "unsafe" rules without adding real
-    // safety, since the assertions right below each access already
-    // check the runtime shape. Full type-checked strictness stays on
-    // for every non-test file.
-    files: ["**/*.test.ts", "**/*.test.tsx"],
+    // Test files across every package, plus their shared non-`.test.ts`
+    // helpers (`**/test/**` — e.g. apps/api/src/test/httpHelpers.ts):
+    // supertest's `Response.body` (and similar ad hoc test doubles/mocks)
+    // are typed `any` by the library itself — every `res.body.data.foo`
+    // access in an HTTP integration test or its shared helper trips the
+    // type-aware "unsafe" rules without adding real safety, since the
+    // assertions right below each access already check the runtime
+    // shape. Full type-checked strictness stays on for every other file.
+    files: ["**/*.test.ts", "**/*.test.tsx", "**/test/**/*.ts"],
     rules: {
       "@typescript-eslint/no-unsafe-member-access": "off",
       "@typescript-eslint/no-unsafe-assignment": "off",
