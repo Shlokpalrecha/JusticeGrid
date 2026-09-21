@@ -1,22 +1,51 @@
+import { QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { AuthProvider } from "./contexts/AuthContext";
+import { queryClient } from "./lib/queryClient";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { LoginPage } from "./pages/LoginPage";
+import { DashboardPage } from "./pages/DashboardPage";
+import { PriorityQueuePage } from "./pages/PriorityQueuePage";
+import { CasesListPage } from "./pages/CasesListPage";
+import { CaseDetailPage } from "./pages/CaseDetailPage";
+import { MyTasksPage } from "./pages/MyTasksPage";
+import { RulesAdminPage } from "./pages/RulesAdminPage";
+import { ReportsPage } from "./pages/ReportsPage";
+import { AuditLogPage } from "./pages/AuditLogPage";
+import { SearchResultsPage } from "./pages/SearchResultsPage";
+import { LimitationsPage } from "./pages/LimitationsPage";
+
 /**
- * JusticeGrid — Phase 0 placeholder shell.
- *
- * The router, providers, layouts, and every real screen (dashboard,
- * priority queue, case detail, rules admin, etc.) are built in Phases
- * 8–10, wired to the live API. This placeholder only proves the frontend
- * build/dev pipeline works end to end.
+ * JusticeGrid — explainable legal-aid workflow prioritization prototype.
+ * Synthetic data only; a review aid, never a legal or judicial decision.
+ * See the persistent DisclaimerBanner (rendered in AppShell on every
+ * authenticated route, and standalone on /login) and /limitations for
+ * the full guardrail framing (spec §1).
  */
 export default function App() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-2 p-8 text-center">
-      <h1 className="text-2xl font-semibold">JusticeGrid</h1>
-      <p className="max-w-md text-sm text-slate-600 dark:text-slate-400">
-        Prototype — synthetic data only. Workflow prioritization is a review aid, not a legal or
-        judicial decision. All actions require human review.
-      </p>
-      <p className="text-xs text-slate-400">
-        Phase 0 scaffold — screens are built in later phases.
-      </p>
-    </div>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route element={<ProtectedRoute />}>
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/priority" element={<PriorityQueuePage />} />
+              <Route path="/cases" element={<CasesListPage />} />
+              <Route path="/cases/:id" element={<CaseDetailPage />} />
+              <Route path="/tasks" element={<MyTasksPage />} />
+              <Route path="/rules" element={<RulesAdminPage />} />
+              <Route path="/reports" element={<ReportsPage />} />
+              <Route path="/audit" element={<AuditLogPage />} />
+              <Route path="/search" element={<SearchResultsPage />} />
+              <Route path="/limitations" element={<LimitationsPage />} />
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }

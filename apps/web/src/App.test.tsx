@@ -1,11 +1,23 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import App from "./App.js";
 
-describe("App shell (Phase 0 wiring smoke test)", () => {
-  it("renders the JusticeGrid title and prototype disclaimer", () => {
+describe("App shell", () => {
+  beforeEach(() => {
+    // No session cookie in the test environment — the silent
+    // refresh-on-load check (AuthContext) should fail closed and land
+    // an unauthenticated visitor on /login, never hang on a loading
+    // spinner or throw.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, json: () => Promise.resolve({ success: false }) }),
+    );
+  });
+
+  it("renders the login page (with its persistent disclaimer) for an unauthenticated visitor", async () => {
     render(<App />);
-    expect(screen.getByText("JusticeGrid")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("JusticeGrid")).toBeInTheDocument());
     expect(screen.getByText(/Prototype — synthetic data only/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
   });
 });
