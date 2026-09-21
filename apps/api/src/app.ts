@@ -16,6 +16,8 @@ import { hearingsRouter } from "./modules/hearings/hearings.routes.js";
 import { personsRouter } from "./modules/persons/persons.routes.js";
 import { tasksRouter } from "./modules/tasks/tasks.routes.js";
 import { documentsRouter } from "./modules/documents/documents.routes.js";
+import { rulesRouter } from "./modules/rules/rules.routes.js";
+import { priorityRouter } from "./modules/priority/priority.routes.js";
 
 /**
  * JusticeGrid API — Express application.
@@ -73,6 +75,8 @@ export function createApp(): express.Express {
   app.use("/api/v1/hearings", hearingsRouter);
   app.use("/api/v1/tasks", tasksRouter);
   app.use("/api/v1/documents", documentsRouter);
+  app.use("/api/v1/rules", rulesRouter);
+  app.use("/api/v1/priority", priorityRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

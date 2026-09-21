@@ -55,3 +55,6 @@ docs/diagrams/*.png.tmp
 # misc
 *.tsbuildinfo
 .eslintcache
+
+# Claude Code session-internal state, not project source
+.claude/

@@ -19,14 +19,14 @@ import type { AuditActor, AuditRequestContext } from "../../lib/audit.js";
 import { writeAuditEntry } from "../../lib/audit.js";
 import { hasUnscopedCaseVisibility, loadAccessibleCase } from "../../lib/caseAccess.js";
 import { touchCaseActivity } from "../../lib/caseActivity.js";
+import {
+  CASE_REQUIRED_FIELDS,
+  computeRequiredFieldsPresent,
+} from "../../lib/caseFieldCompleteness.js";
 import { toSkipTake } from "../../lib/pagination.js";
+import { evaluateAndPersistCase } from "../../lib/priorityEvaluation.js";
 import { prisma } from "../../lib/prisma.js";
 import { toPersonDto } from "../persons/persons.service.js";
-
-/** The Case-field subset the default R-CASE-INCOMPLETE rule checks
- * (spec §6.6) — kept in one place so the Overview tab's completeness
- * meter and (in Phase 5) the rule engine's input never drift apart. */
-const CASE_REQUIRED_FIELDS = ["custodyStartDate", "courtName", "caseStatus", "charges"] as const;
 
 function toUserRef(user: Pick<User, "id" | "fullName" | "role"> | null) {
   if (!user) return null;
@@ -71,12 +71,7 @@ function fieldCompleteness(
   caseRow: Case,
   chargeCount: number,
 ): CaseAggregateDto["fieldCompleteness"] {
-  const present: Record<(typeof CASE_REQUIRED_FIELDS)[number], boolean> = {
-    custodyStartDate: caseRow.custodyStartDate !== null,
-    courtName: caseRow.courtName.trim().length > 0,
-    caseStatus: Boolean(caseRow.caseStatus),
-    charges: chargeCount > 0,
-  };
+  const present = computeRequiredFieldsPresent(caseRow, chargeCount);
   return {
     checkedFields: [...CASE_REQUIRED_FIELDS],
     missingFields: CASE_REQUIRED_FIELDS.filter((f) => !present[f]),
@@ -318,6 +313,7 @@ export async function createCase(
         },
       });
     }
+    await evaluateAndPersistCase(tx, caseRow.id, { triggeredBy: "USER", triggeredById: actor.id });
     return caseRow;
   });
 
@@ -363,6 +359,7 @@ export async function updateCase(
       before: existing,
       after: caseRow,
     });
+    await evaluateAndPersistCase(tx, caseId, { triggeredBy: "USER", triggeredById: actor.id });
     return caseRow;
   });
 
@@ -419,6 +416,7 @@ export async function assignCase(
       before: { assignedToId: existing.assignedToId },
       after: { assignedToId: targetUser.id },
     });
+    await evaluateAndPersistCase(tx, caseId, { triggeredBy: "USER", triggeredById: actor.id });
     return caseRow;
   });
 
@@ -461,6 +459,7 @@ export async function unassignCase(
       before: { assignedToId: existing.assignedToId },
       after: { assignedToId: null },
     });
+    await evaluateAndPersistCase(tx, caseId, { triggeredBy: "USER", triggeredById: actor.id });
     return caseRow;
   });
 
@@ -489,6 +488,7 @@ export async function archiveCase(
       before: { isArchived: existing.isArchived },
       after: { isArchived: true, archivedReason: input.archivedReason },
     });
+    await evaluateAndPersistCase(tx, caseId, { triggeredBy: "USER", triggeredById: actor.id });
     return caseRow;
   });
 
@@ -532,6 +532,7 @@ export async function addCharge(
       summary: `${actor.email} added a charge to case ${caseRow.caseRef}`,
       after: c,
     });
+    await evaluateAndPersistCase(tx, caseId, { triggeredBy: "USER", triggeredById: actor.id });
     return c;
   });
 
@@ -559,6 +560,7 @@ export async function addCaseNote(
       summary: `${actor.email} added a note to case ${caseRow.caseRef}`,
       after: { body: n.body, isInternal: n.isInternal },
     });
+    await evaluateAndPersistCase(tx, caseId, { triggeredBy: "USER", triggeredById: actor.id });
     return n;
   });
 

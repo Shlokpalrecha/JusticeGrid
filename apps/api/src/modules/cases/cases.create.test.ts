@@ -3,7 +3,12 @@ import request from "supertest";
 import type { Express } from "express";
 import { createApp } from "../../app.js";
 import { prisma } from "../../lib/prisma.js";
-import { createTestPerson, createTestUser, resetDatabase } from "../../test/dbHelpers.js";
+import {
+  createTestPerson,
+  createTestUser,
+  resetDatabase,
+  seedDefaultRuleset,
+} from "../../test/dbHelpers.js";
 import { loginAs } from "../../test/httpHelpers.js";
 
 /** T2 (spec §11 traceability table): "A case can be created." */
@@ -13,6 +18,10 @@ describe("case creation (T2)", () => {
   beforeEach(async () => {
     await resetDatabase();
     app = createApp();
+    // Case mutations recompute priority (spec §6.7), which requires an
+    // active RulesetConfig — seed it here rather than in every `it`.
+    const system = await createTestUser({ role: "ADMIN", email: "system@justicegrid.test" });
+    await seedDefaultRuleset(system.id);
   });
 
   it("ADMIN creates a case, unassigned by default", async () => {

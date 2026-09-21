@@ -14,6 +14,7 @@ import { writeAuditEntry } from "../../lib/audit.js";
 import { hasUnscopedCaseVisibility, loadAccessibleCase } from "../../lib/caseAccess.js";
 import { touchCaseActivity } from "../../lib/caseActivity.js";
 import { toSkipTake } from "../../lib/pagination.js";
+import { evaluateAndPersistCase } from "../../lib/priorityEvaluation.js";
 import { prisma } from "../../lib/prisma.js";
 
 interface ActorContext {
@@ -34,6 +35,7 @@ export function toTaskDto(t: Task): TaskDto {
     dueDate: t.dueDate.toISOString(),
     status: t.status,
     blockedReason: t.blockedReason,
+    blockedSince: t.blockedSince?.toISOString() ?? null,
     completedAt: t.completedAt?.toISOString() ?? null,
     completedById: t.completedById,
     completionNote: t.completionNote,
@@ -122,6 +124,7 @@ export async function createTask(
       summary: `${actor.email} created task "${t.title}" on case ${caseRow.caseRef}`,
       after: t,
     });
+    await evaluateAndPersistCase(tx, caseId, { triggeredBy: "USER", triggeredById: actor.id });
     return t;
   });
 
@@ -144,10 +147,26 @@ export async function updateTask(
     ]);
   }
 
+  // blockedSince (spec §6.1's TaskInput contract — not itself in spec
+  // §5's Task field list, added in a follow-up migration; see
+  // schema.prisma) is derived from the status transition, not settable
+  // directly: it starts counting the moment a task becomes BLOCKED, and
+  // clears the moment it stops being BLOCKED.
+  let blockedSince: Date | null | undefined;
+  if (input.status === "BLOCKED" && existing.status !== "BLOCKED") {
+    blockedSince = new Date();
+  } else if (input.status && input.status !== "BLOCKED" && existing.status === "BLOCKED") {
+    blockedSince = null;
+  }
+
   const updated = await prisma.$transaction(async (tx) => {
     const t = await tx.task.update({
       where: { id: taskId },
-      data: { ...input, dueDate: input.dueDate ? new Date(input.dueDate) : undefined },
+      data: {
+        ...input,
+        dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
+        blockedSince,
+      },
     });
     await touchCaseActivity(tx, existing.caseId);
     await writeAuditEntry(tx, actor, request, {
@@ -158,6 +177,10 @@ export async function updateTask(
       summary: `${actor.email} updated task "${t.title}" on case ${caseRow.caseRef}`,
       before: existing,
       after: t,
+    });
+    await evaluateAndPersistCase(tx, existing.caseId, {
+      triggeredBy: "USER",
+      triggeredById: actor.id,
     });
     return t;
   });
@@ -201,6 +224,10 @@ export async function completeTask(
       summary: `${actor.email} completed task "${t.title}" on case ${caseRow.caseRef}`,
       before: { status: existing.status },
       after: { status: "COMPLETED" },
+    });
+    await evaluateAndPersistCase(tx, existing.caseId, {
+      triggeredBy: "USER",
+      triggeredById: actor.id,
     });
     return t;
   });
@@ -246,6 +273,10 @@ export async function reassignTask(
       summary: `${actor.email} reassigned task "${t.title}" on case ${caseRow.caseRef}`,
       before: { assignedToId: existing.assignedToId },
       after: { assignedToId: input.assignedToId },
+    });
+    await evaluateAndPersistCase(tx, existing.caseId, {
+      triggeredBy: "USER",
+      triggeredById: actor.id,
     });
     return t;
   });

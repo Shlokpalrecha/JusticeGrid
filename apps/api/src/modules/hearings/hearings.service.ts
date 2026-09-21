@@ -12,6 +12,7 @@ import { writeAuditEntry } from "../../lib/audit.js";
 import { hasUnscopedCaseVisibility, loadAccessibleCase } from "../../lib/caseAccess.js";
 import { touchCaseActivity } from "../../lib/caseActivity.js";
 import { recomputeCaseHearingDates } from "../../lib/caseHearingDates.js";
+import { evaluateAndPersistCase } from "../../lib/priorityEvaluation.js";
 import { prisma } from "../../lib/prisma.js";
 
 interface ActorContext {
@@ -100,6 +101,7 @@ export async function createHearing(
       summary: `${actor.email} recorded a ${h.hearingType} hearing for case ${caseRow.caseRef}`,
       after: h,
     });
+    await evaluateAndPersistCase(tx, caseId, { triggeredBy: "USER", triggeredById: actor.id });
     return h;
   });
 
@@ -140,6 +142,10 @@ export async function updateHearing(
       before: existing,
       after: h,
     });
+    await evaluateAndPersistCase(tx, existing.caseId, {
+      triggeredBy: "USER",
+      triggeredById: actor.id,
+    });
     return h;
   });
 
@@ -175,6 +181,10 @@ export async function markOrderReviewed(
       summary: `${actor.email} marked the order for a hearing on case ${caseRow.caseRef} as reviewed`,
       before: { orderReviewed: existing.orderReviewed },
       after: { orderReviewed: true },
+    });
+    await evaluateAndPersistCase(tx, existing.caseId, {
+      triggeredBy: "USER",
+      triggeredById: actor.id,
     });
     return h;
   });

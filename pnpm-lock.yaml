@@ -135,6 +135,9 @@ importers:
       '@types/node':
         specifier: 20.17.6
         version: 20.17.6
+      '@types/node-cron':
+        specifier: 3.0.11
+        version: 3.0.11
       '@types/supertest':
         specifier: 6.0.2
         version: 6.0.2
@@ -1216,6 +1219,9 @@ packages:
 
   '@types/methods@1.1.4':
     resolution: {integrity: sha512-ymXWVrDiCxTBE3+RIrrP533E70eA+9qu7zdWoHuOmGujkYtzf4HQF96b8nwHLqhuf4ykX61IGRIB38CC6/sImQ==}
+
+  '@types/node-cron@3.0.11':
+    resolution: {integrity: sha512-0ikrnug3/IyneSHqCBeslAhlK2aBfYek1fGo4bP4QnZPmiqSGRK+Oy7ZMisLWkesffJvQ1cqAcBnJC+8+nxIAg==}
 
   '@types/node@20.17.6':
     resolution: {integrity: sha512-VEI7OdvK2wP7XHnsuXbAJnEpEkF6NjSN45QJlL4VGqZSXsnicpesdTWsg9RISeSdYd3yeRj/y3k5KGjUXYnFwQ==}
@@ -4554,6 +4560,8 @@ snapshots:
       '@types/node': 20.17.6
 
   '@types/methods@1.1.4': {}
+
+  '@types/node-cron@3.0.11': {}
 
   '@types/node@20.17.6':
     dependencies:

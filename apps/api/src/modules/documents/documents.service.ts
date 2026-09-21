@@ -10,6 +10,7 @@ import type { AuditRequestContext } from "../../lib/audit.js";
 import { writeAuditEntry } from "../../lib/audit.js";
 import { loadAccessibleCase } from "../../lib/caseAccess.js";
 import { touchCaseActivity } from "../../lib/caseActivity.js";
+import { evaluateAndPersistCase } from "../../lib/priorityEvaluation.js";
 import { prisma } from "../../lib/prisma.js";
 
 interface ActorContext {
@@ -116,6 +117,7 @@ export async function addDocument(
       summary: `${actor.email} added a ${d.documentType} requirement to case ${caseRow.caseRef}`,
       after: d,
     });
+    await evaluateAndPersistCase(tx, caseId, { triggeredBy: "USER", triggeredById: actor.id });
     return d;
   });
 
@@ -153,6 +155,10 @@ export async function updateDocument(
       summary: `${actor.email} updated the ${d.documentType} requirement on case ${caseRow.caseRef}`,
       before: existing,
       after: d,
+    });
+    await evaluateAndPersistCase(tx, existing.caseId, {
+      triggeredBy: "USER",
+      triggeredById: actor.id,
     });
     return d;
   });
@@ -195,6 +201,10 @@ export async function verifyDocument(
       summary: `${actor.email} verified the ${d.documentType} document on case ${caseRow.caseRef}`,
       before: { status: existing.status },
       after: { status: "VERIFIED" },
+    });
+    await evaluateAndPersistCase(tx, existing.caseId, {
+      triggeredBy: "USER",
+      triggeredById: actor.id,
     });
     return d;
   });
@@ -252,6 +262,7 @@ export async function applyChecklist(
       summary: `${actor.email} applied the default document checklist (${rows.length} item(s)) to case ${caseRow.caseRef}`,
       after: { documentTypes: rows.map((r) => r.documentType) },
     });
+    await evaluateAndPersistCase(tx, caseId, { triggeredBy: "USER", triggeredById: actor.id });
   });
 
   // Re-fetched rather than reusing the rows created above, so the

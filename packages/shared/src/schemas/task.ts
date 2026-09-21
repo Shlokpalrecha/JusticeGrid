@@ -14,6 +14,9 @@ export const TaskSchema = z.object({
   dueDate: IsoDateTimeSchema,
   status: TaskStatusSchema,
   blockedReason: z.string().nullable(),
+  // Derived from the status transition, not directly settable — see
+  // apps/api/prisma/schema.prisma's comment on this field.
+  blockedSince: IsoDateTimeSchema.nullable(),
   completedAt: IsoDateTimeSchema.nullable(),
   completedById: IdSchema.nullable(),
   completionNote: z.string().nullable(),

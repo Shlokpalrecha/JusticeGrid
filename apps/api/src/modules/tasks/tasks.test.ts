@@ -3,7 +3,12 @@ import request from "supertest";
 import type { Express } from "express";
 import { createApp } from "../../app.js";
 import { prisma } from "../../lib/prisma.js";
-import { createTestCase, createTestUser, resetDatabase } from "../../test/dbHelpers.js";
+import {
+  createTestCase,
+  createTestUser,
+  resetDatabase,
+  seedDefaultRuleset,
+} from "../../test/dbHelpers.js";
 import { loginAs } from "../../test/httpHelpers.js";
 
 describe("tasks", () => {
@@ -12,6 +17,10 @@ describe("tasks", () => {
   beforeEach(async () => {
     await resetDatabase();
     app = createApp();
+    // Task mutations recompute priority (spec §6.7), which requires an
+    // active RulesetConfig — seed it here rather than in every `it`.
+    const system = await createTestUser({ role: "ADMIN", email: "system@justicegrid.test" });
+    await seedDefaultRuleset(system.id);
   });
 
   it("creates a task on a case", async () => {

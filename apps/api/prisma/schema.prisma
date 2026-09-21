@@ -410,6 +410,14 @@ model Task {
   dueDate           DateTime
   status            TaskStatus   @default(PENDING)
   blockedReason     String?
+  // Not in spec §5's literal Task field list, but required to fill an
+  // otherwise-unfillable gap: the rules-engine's TaskInput contract
+  // (spec §6.1) requires `blockedSince` for TASK_BLOCKED_OVER_DAYS (used
+  // by the default R-TASK-BLOCKED rule, spec §6.6) — without a
+  // timestamp for when a task *became* blocked, "blocked for > N days"
+  // cannot be computed at all. Set when status transitions to BLOCKED,
+  // cleared when it transitions away (see tasks.service.ts).
+  blockedSince      DateTime?
   completedAt       DateTime?
   completedById     String?
   completionNote    String?

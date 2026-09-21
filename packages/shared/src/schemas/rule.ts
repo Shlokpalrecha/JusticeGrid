@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { ConditionTypeSchema, RuleCategorySchema } from "../enums.js";
+import { ConditionTypeSchema, PriorityLevelSchema, RuleCategorySchema } from "../enums.js";
 import { IdSchema, IsoDateTimeSchema } from "./common.js";
+import { PriorityDistributionSchema } from "./priority.js";
 
 /**
  * A rule's condition parameters. Matches `RuleDefinition.params` in
@@ -110,3 +111,49 @@ export const RulesetConfigCreateInputSchema = z
     path: ["mediumThreshold"],
   });
 export type RulesetConfigCreateInput = z.infer<typeof RulesetConfigCreateInputSchema>;
+
+/**
+ * `POST /rules/simulate` (spec §7 ⭐): a candidate ruleset — per-rule
+ * weight/enabled overrides and/or new thresholds — evaluated against
+ * every case WITHOUT persisting anything, so an admin can preview a
+ * change's effect before committing to it (`PATCH /rules/:id` /
+ * `PUT /rules/config`, which do persist).
+ */
+export const RuleSimulateInputSchema = z
+  .object({
+    ruleOverrides: z
+      .array(
+        z.object({
+          ruleId: IdSchema,
+          weight: z.number().int().optional(),
+          isEnabled: z.boolean().optional(),
+        }),
+      )
+      .default([]),
+    highThreshold: z.number().int().positive().optional(),
+    mediumThreshold: z.number().int().positive().optional(),
+    maxScoreCap: z.number().int().positive().optional(),
+    topN: z.number().int().positive().max(100).default(20),
+  })
+  .strict();
+export type RuleSimulateInput = z.infer<typeof RuleSimulateInputSchema>;
+
+export const SimulateQueueRowSchema = z.object({
+  caseId: IdSchema,
+  caseRef: z.string(),
+  totalScore: z.number().int(),
+  priorityLevel: PriorityLevelSchema,
+});
+export type SimulateQueueRowDto = z.infer<typeof SimulateQueueRowSchema>;
+
+export const RuleSimulateSnapshotSchema = z.object({
+  distribution: PriorityDistributionSchema,
+  topCases: z.array(SimulateQueueRowSchema),
+});
+
+export const RuleSimulateResponseSchema = z.object({
+  before: RuleSimulateSnapshotSchema,
+  after: RuleSimulateSnapshotSchema,
+  casesEvaluated: z.number().int(),
+});
+export type RuleSimulateResponse = z.infer<typeof RuleSimulateResponseSchema>;
