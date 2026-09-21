@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AuditActionSchema, RoleSchema } from "../enums.js";
-import { IdSchema, IsoDateTimeSchema } from "./common.js";
+import { PaginationQuerySchema } from "../envelope.js";
+import { BooleanQueryParamSchema, IdSchema, IsoDateTimeSchema } from "./common.js";
 
 /**
  * Wire shape of an AuditLog row. `sequence` is a Postgres `bigint`
@@ -43,15 +44,13 @@ export const AuditChainVerificationSchema = z.object({
 });
 export type AuditChainVerification = z.infer<typeof AuditChainVerificationSchema>;
 
-export const AuditLogFilterSchema = z
-  .object({
-    actor: IdSchema.optional(),
-    action: AuditActionSchema.optional(),
-    entityType: z.string().optional(),
-    entityId: z.string().optional(),
-    from: IsoDateTimeSchema.optional(),
-    to: IsoDateTimeSchema.optional(),
-    success: z.coerce.boolean().optional(),
-  })
-  .strict();
+export const AuditLogFilterSchema = PaginationQuerySchema.extend({
+  actor: IdSchema.optional(),
+  action: AuditActionSchema.optional(),
+  entityType: z.string().optional(),
+  entityId: z.string().optional(),
+  from: IsoDateTimeSchema.optional(),
+  to: IsoDateTimeSchema.optional(),
+  success: BooleanQueryParamSchema.optional(),
+}).strict();
 export type AuditLogFilter = z.infer<typeof AuditLogFilterSchema>;

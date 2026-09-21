@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AuditAction, AuditLog, Prisma, PrismaClient, Role } from "@prisma/client";
+import type { AuditLogDto } from "@justicegrid/shared";
 
 /**
  * Append-only, hash-chained audit log (spec §5, §8.9). No update or
@@ -239,4 +240,35 @@ export async function verifyAuditChain(
   }
 
   return { intact: true, entriesChecked: entries.length, firstBreakAtSequence: null };
+}
+
+/** Shared AuditLog row → wire DTO mapper (spec §5), reused by every
+ * audit-reading call site (`cases.service.ts`'s `GET /cases/:id/audit`,
+ * `audit.service.ts`'s `GET /audit`/`GET /audit/:id`) so the mapping —
+ * notably `sequence`'s BigInt → decimal-string conversion — never
+ * drifts between them. */
+export function toAuditLogDto(e: AuditLog): AuditLogDto {
+  return {
+    id: e.id,
+    sequence: e.sequence.toString(),
+    actorId: e.actorId,
+    actorEmail: e.actorEmail,
+    actorRole: e.actorRole,
+    action: e.action,
+    entityType: e.entityType,
+    entityId: e.entityId,
+    entityLabel: e.entityLabel,
+    summary: e.summary,
+    beforeJson: e.beforeJson,
+    afterJson: e.afterJson,
+    changedFields: e.changedFields,
+    ipAddress: e.ipAddress,
+    userAgent: e.userAgent,
+    requestId: e.requestId,
+    success: e.success,
+    failureReason: e.failureReason,
+    previousHash: e.previousHash,
+    hash: e.hash,
+    createdAt: e.createdAt.toISOString(),
+  };
 }

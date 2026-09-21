@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TaskCategorySchema, TaskStatusSchema } from "../enums.js";
-import { IdSchema, IsoDateTimeSchema } from "./common.js";
+import { BooleanQueryParamSchema, IdSchema, IsoDateTimeSchema } from "./common.js";
 import { PaginationQuerySchema } from "../envelope.js";
 
 export const TaskSchema = z.object({
@@ -79,7 +79,7 @@ export const TaskFilterQuerySchema = PaginationQuerySchema.extend({
   status: TaskStatusSchema.optional(),
   category: TaskCategorySchema.optional(),
   dueBefore: IsoDateTimeSchema.optional(),
-  overdue: z.coerce.boolean().optional(),
+  overdue: BooleanQueryParamSchema.optional(),
   caseId: IdSchema.optional(),
 }).strict();
 export type TaskFilterQuery = z.infer<typeof TaskFilterQuerySchema>;

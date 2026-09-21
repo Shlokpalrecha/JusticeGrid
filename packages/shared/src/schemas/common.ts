@@ -36,3 +36,12 @@ export const IsoDateSchema = z
  * `GET/PATCH /resource/:id`-shaped routes. */
 export const IdParamSchema = z.object({ id: IdSchema }).strict();
 export type IdParam = z.infer<typeof IdParamSchema>;
+
+/**
+ * A boolean query-string filter (e.g. `?overdue=false`). Deliberately
+ * NOT `z.coerce.boolean()`: that coerces via JS's `Boolean(x)`, so the
+ * literal string `"false"` — exactly what a client sends to ask for
+ * `false` — comes out `true` (any non-empty string is truthy). Every
+ * boolean query param in this package must use this schema instead.
+ */
+export const BooleanQueryParamSchema = z.enum(["true", "false"]).transform((v) => v === "true");

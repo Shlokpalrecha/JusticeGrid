@@ -13,6 +13,7 @@ import type { AuditRequestContext } from "../../lib/audit.js";
 import { writeAuditEntry } from "../../lib/audit.js";
 import { hasUnscopedCaseVisibility, loadAccessibleCase } from "../../lib/caseAccess.js";
 import { touchCaseActivity } from "../../lib/caseActivity.js";
+import { createNotification, shouldNotify } from "../../lib/notifications.js";
 import { toSkipTake } from "../../lib/pagination.js";
 import { evaluateAndPersistCase } from "../../lib/priorityEvaluation.js";
 import { prisma } from "../../lib/prisma.js";
@@ -125,6 +126,16 @@ export async function createTask(
       after: t,
     });
     await evaluateAndPersistCase(tx, caseId, { triggeredBy: "USER", triggeredById: actor.id });
+    if (t.assignedToId && shouldNotify(t.assignedToId, actor.id)) {
+      await createNotification(tx, {
+        userId: t.assignedToId,
+        type: "TASK_ASSIGNED",
+        title: "Task assigned to you",
+        body: `${actor.email} assigned you the task "${t.title}" on case ${caseRow.caseRef}.`,
+        relatedEntityType: "Task",
+        relatedEntityId: t.id,
+      });
+    }
     return t;
   });
 
@@ -278,6 +289,16 @@ export async function reassignTask(
       triggeredBy: "USER",
       triggeredById: actor.id,
     });
+    if (input.assignedToId && shouldNotify(input.assignedToId, actor.id)) {
+      await createNotification(tx, {
+        userId: input.assignedToId,
+        type: "TASK_ASSIGNED",
+        title: "Task assigned to you",
+        body: `${actor.email} assigned you the task "${t.title}" on case ${caseRow.caseRef}.`,
+        relatedEntityType: "Task",
+        relatedEntityId: t.id,
+      });
+    }
     return t;
   });
 

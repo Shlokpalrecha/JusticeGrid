@@ -23,3 +23,5 @@ export * from "./schemas/audit.js";
 export * from "./schemas/notification.js";
 export * from "./schemas/savedFilter.js";
 export * from "./schemas/timeline.js";
+export * from "./schemas/search.js";
+export * from "./schemas/report.js";

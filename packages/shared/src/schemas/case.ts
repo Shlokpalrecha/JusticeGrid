@@ -5,7 +5,7 @@ import {
   CustodyTypeSchema,
   PriorityLevelSchema,
 } from "../enums.js";
-import { IdSchema, IsoDateTimeSchema } from "./common.js";
+import { BooleanQueryParamSchema, IdSchema, IsoDateTimeSchema } from "./common.js";
 import { PaginationQuerySchema } from "../envelope.js";
 import { PersonSchema } from "./person.js";
 import { UserRefSchema } from "./user.js";
@@ -129,9 +129,9 @@ export const CaseFilterQuerySchema = PaginationQuerySchema.extend({
   assignedTo: IdSchema.optional(),
   hearingFrom: IsoDateTimeSchema.optional(),
   hearingTo: IsoDateTimeSchema.optional(),
-  hasOverdueTasks: z.coerce.boolean().optional(),
-  missingDocuments: z.coerce.boolean().optional(),
-  unassigned: z.coerce.boolean().optional(),
+  hasOverdueTasks: BooleanQueryParamSchema.optional(),
+  missingDocuments: BooleanQueryParamSchema.optional(),
+  unassigned: BooleanQueryParamSchema.optional(),
   custodyType: CustodyTypeSchema.optional(),
   bailStatus: BailStatusSchema.optional(),
   district: z.string().min(1).optional(),

@@ -10,6 +10,7 @@ import type { AuditRequestContext } from "../../lib/audit.js";
 import { writeAuditEntry } from "../../lib/audit.js";
 import { loadAccessibleCase } from "../../lib/caseAccess.js";
 import { touchCaseActivity } from "../../lib/caseActivity.js";
+import { createNotification, shouldNotify } from "../../lib/notifications.js";
 import { evaluateAndPersistCase } from "../../lib/priorityEvaluation.js";
 import { prisma } from "../../lib/prisma.js";
 
@@ -160,6 +161,21 @@ export async function updateDocument(
       triggeredBy: "USER",
       triggeredById: actor.id,
     });
+    if (
+      input.status === "REQUESTED" &&
+      existing.status !== "REQUESTED" &&
+      caseRow.assignedToId &&
+      shouldNotify(caseRow.assignedToId, actor.id)
+    ) {
+      await createNotification(tx, {
+        userId: caseRow.assignedToId,
+        type: "DOCUMENT_REQUESTED",
+        title: "Document requested",
+        body: `${actor.email} requested the ${d.documentType} document on case ${caseRow.caseRef}.`,
+        relatedEntityType: "DocumentRequirement",
+        relatedEntityId: d.id,
+      });
+    }
     return d;
   });
 

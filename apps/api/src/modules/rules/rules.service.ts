@@ -305,7 +305,7 @@ export async function updateRulesetConfig(
  * the whole batch. */
 /**
  * `actor` is `AuditActor` (nullable `id`/`role`), not the narrower
- * `ActorContext`, so the nightly scheduled job (jobs/nightlyRecompute.ts)
+ * `ActorContext`, so the nightly scheduled job (jobs/nightlyJobs.ts)
  * can call this with a system actor (`id: null`) — spec §6.7's
  * SCHEDULED trigger has no authenticated user behind it. Every
  * HTTP-triggered call site still passes a real `ActorContext`, which is

@@ -4,7 +4,9 @@ import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 import cookieParser from "cookie-parser";
+import swaggerUi from "swagger-ui-express";
 import { env } from "./config/env.js";
+import { buildOpenApiDocument } from "./lib/openapi.js";
 import { prisma } from "./lib/prisma.js";
 import { errorHandler, notFoundHandler } from "./middleware/errors.js";
 import { globalRateLimiter } from "./middleware/rateLimit.js";
@@ -13,7 +15,10 @@ import { auditRouter } from "./modules/audit/audit.routes.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { casesRouter } from "./modules/cases/cases.routes.js";
 import { hearingsRouter } from "./modules/hearings/hearings.routes.js";
+import { notificationsRouter } from "./modules/notifications/notifications.routes.js";
 import { personsRouter } from "./modules/persons/persons.routes.js";
+import { reportsRouter } from "./modules/reports/reports.routes.js";
+import { searchRouter } from "./modules/search/search.routes.js";
 import { tasksRouter } from "./modules/tasks/tasks.routes.js";
 import { documentsRouter } from "./modules/documents/documents.routes.js";
 import { rulesRouter } from "./modules/rules/rules.routes.js";
@@ -35,6 +40,16 @@ export function createApp(): express.Express {
   // `req.ip` reflects the real client address rather than the proxy's —
   // used for rate limiting and audit log IP capture.
   app.set("trust proxy", 1);
+
+  // Mounted before helmet() (spec §4: "served at /api/docs via Swagger
+  // UI") — Swagger UI's bundled HTML relies on inline <script>/<style>
+  // tags that helmet's default Content-Security-Policy would block, and
+  // a read-only API reference page has no reason to carry that
+  // restriction. Everything else in this app keeps the full policy.
+  const openApiDocument = buildOpenApiDocument();
+  app.get("/api/docs/openapi.json", (_req, res) => res.json(openApiDocument));
+  app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(openApiDocument));
+
   app.use(helmet());
   app.use(
     cors({
@@ -77,6 +92,9 @@ export function createApp(): express.Express {
   app.use("/api/v1/documents", documentsRouter);
   app.use("/api/v1/rules", rulesRouter);
   app.use("/api/v1/priority", priorityRouter);
+  app.use("/api/v1/notifications", notificationsRouter);
+  app.use("/api/v1/search", searchRouter);
+  app.use("/api/v1/reports", reportsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

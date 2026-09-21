@@ -12,8 +12,17 @@ import {
 } from "@justicegrid/rules-engine";
 import { AppError, type EvaluationTrigger } from "@justicegrid/shared";
 import { computeRequiredFieldsPresent } from "./caseFieldCompleteness.js";
+import { createNotification } from "./notifications.js";
 
 type Client = PrismaClient | Prisma.TransactionClient;
+
+/** Ordering for detecting a PRIORITY_ESCALATED notification (spec §5's
+ * NotificationType) — only an INCREASE in band is an escalation. */
+const PRIORITY_LEVEL_RANK: Record<EvaluationResult["priorityLevel"], number> = {
+  ROUTINE: 0,
+  MEDIUM: 1,
+  HIGH: 2,
+};
 
 /**
  * This file is the ONLY place that translates between Prisma rows and
@@ -235,6 +244,22 @@ export async function evaluateAndPersistCase(
       lastEvaluatedAt: now,
     },
   });
+
+  if (
+    latest !== null &&
+    input.assignedToId &&
+    PRIORITY_LEVEL_RANK[result.priorityLevel] >
+      PRIORITY_LEVEL_RANK[latest.priorityLevel as EvaluationResult["priorityLevel"]]
+  ) {
+    await createNotification(tx, {
+      userId: input.assignedToId,
+      type: "PRIORITY_ESCALATED",
+      title: "Case priority escalated",
+      body: `Case ${input.caseRef} escalated from ${latest.priorityLevel} to ${result.priorityLevel}.`,
+      relatedEntityType: "Case",
+      relatedEntityId: caseId,
+    });
+  }
 
   return result;
 }

@@ -16,13 +16,14 @@ import {
   type TimelineEventDto,
 } from "@justicegrid/shared";
 import type { AuditActor, AuditRequestContext } from "../../lib/audit.js";
-import { writeAuditEntry } from "../../lib/audit.js";
+import { toAuditLogDto, writeAuditEntry } from "../../lib/audit.js";
 import { hasUnscopedCaseVisibility, loadAccessibleCase } from "../../lib/caseAccess.js";
 import { touchCaseActivity } from "../../lib/caseActivity.js";
 import {
   CASE_REQUIRED_FIELDS,
   computeRequiredFieldsPresent,
 } from "../../lib/caseFieldCompleteness.js";
+import { createNotification, shouldNotify } from "../../lib/notifications.js";
 import { toSkipTake } from "../../lib/pagination.js";
 import { evaluateAndPersistCase } from "../../lib/priorityEvaluation.js";
 import { prisma } from "../../lib/prisma.js";
@@ -417,6 +418,16 @@ export async function assignCase(
       after: { assignedToId: targetUser.id },
     });
     await evaluateAndPersistCase(tx, caseId, { triggeredBy: "USER", triggeredById: actor.id });
+    if (shouldNotify(targetUser.id, actor.id)) {
+      await createNotification(tx, {
+        userId: targetUser.id,
+        type: "CASE_ASSIGNED",
+        title: "Case assigned to you",
+        body: `${actor.email} assigned case ${caseRow.caseRef} to you.`,
+        relatedEntityType: "Case",
+        relatedEntityId: caseId,
+      });
+    }
     return caseRow;
   });
 
@@ -648,27 +659,5 @@ export async function getCaseAudit(actor: ActorContext, caseId: string): Promise
     orderBy: { sequence: "desc" },
   });
 
-  return entries.map((e) => ({
-    id: e.id,
-    sequence: e.sequence.toString(),
-    actorId: e.actorId,
-    actorEmail: e.actorEmail,
-    actorRole: e.actorRole,
-    action: e.action,
-    entityType: e.entityType,
-    entityId: e.entityId,
-    entityLabel: e.entityLabel,
-    summary: e.summary,
-    beforeJson: e.beforeJson,
-    afterJson: e.afterJson,
-    changedFields: e.changedFields,
-    ipAddress: e.ipAddress,
-    userAgent: e.userAgent,
-    requestId: e.requestId,
-    success: e.success,
-    failureReason: e.failureReason,
-    previousHash: e.previousHash,
-    hash: e.hash,
-    createdAt: e.createdAt.toISOString(),
-  }));
+  return entries.map(toAuditLogDto);
 }
