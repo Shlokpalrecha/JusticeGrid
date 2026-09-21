@@ -60,7 +60,7 @@ export const DEFAULT_RULESET: readonly DefaultRuleSeed[] = [
     conditionType: "TASK_OVERDUE",
     params: { graceDays: 0 },
     weight: 4,
-    displayTemplate: "Task overdue by {daysOverdue} day(s)",
+    displayTemplate: "{overdueTaskCount} open task(s) overdue",
   },
   {
     code: "R-TASK-DUE-2D",
@@ -70,7 +70,7 @@ export const DEFAULT_RULESET: readonly DefaultRuleSeed[] = [
     conditionType: "TASK_DUE_WITHIN_DAYS",
     params: { days: 2 },
     weight: 2,
-    displayTemplate: "Task due in {daysUntil} day(s)",
+    displayTemplate: "{dueSoonTaskCount} task(s) due within {days} day(s)",
   },
   {
     code: "R-DOC-MISSING",
@@ -80,7 +80,7 @@ export const DEFAULT_RULESET: readonly DefaultRuleSeed[] = [
     conditionType: "MANDATORY_DOCUMENT_MISSING",
     params: {},
     weight: 3,
-    displayTemplate: "{count} mandatory document(s) missing",
+    displayTemplate: "{missingDocumentCount} mandatory document(s) missing",
   },
   {
     code: "R-CASE-INCOMPLETE",
@@ -110,7 +110,7 @@ export const DEFAULT_RULESET: readonly DefaultRuleSeed[] = [
     conditionType: "TASK_UNASSIGNED",
     params: {},
     weight: 2,
-    displayTemplate: "{count} open task(s) with no owner",
+    displayTemplate: "{unassignedTaskCount} open task(s) with no owner",
   },
   {
     code: "R-ORDER-UNREVIEWED",
@@ -120,7 +120,7 @@ export const DEFAULT_RULESET: readonly DefaultRuleSeed[] = [
     conditionType: "ORDER_NOT_REVIEWED_AFTER_DAYS",
     params: { days: 7 },
     weight: 3,
-    displayTemplate: "Order unreviewed for {daysSince} day(s)",
+    displayTemplate: "Order unreviewed {daysSinceHearing} day(s) after the hearing",
   },
   {
     code: "R-NO-HEARING-DATE",
@@ -140,7 +140,7 @@ export const DEFAULT_RULESET: readonly DefaultRuleSeed[] = [
     conditionType: "NO_ACTIVITY_SINCE_DAYS",
     params: { days: 30 },
     weight: 1,
-    displayTemplate: "No activity for {daysSince} day(s)",
+    displayTemplate: "No activity for {daysSinceActivity} day(s)",
   },
   {
     code: "R-BAIL-STALLED",
@@ -150,7 +150,7 @@ export const DEFAULT_RULESET: readonly DefaultRuleSeed[] = [
     conditionType: "BAIL_APPLICATION_STALLED_DAYS",
     params: { days: 21 },
     weight: 2,
-    displayTemplate: "Bail application pending for {daysSince} day(s)",
+    displayTemplate: "Bail application pending for {daysSinceApplied} day(s)",
   },
   {
     code: "R-ADJOURN-3X",
@@ -170,7 +170,7 @@ export const DEFAULT_RULESET: readonly DefaultRuleSeed[] = [
     conditionType: "DOCUMENT_UNVERIFIED_OVER_DAYS",
     params: { days: 10 },
     weight: 1,
-    displayTemplate: "Unverified for {daysSince} day(s)",
+    displayTemplate: "{staleDocumentCount} document(s) unverified for more than {days} day(s)",
   },
   {
     code: "R-TASK-BLOCKED",
@@ -180,7 +180,7 @@ export const DEFAULT_RULESET: readonly DefaultRuleSeed[] = [
     conditionType: "TASK_BLOCKED_OVER_DAYS",
     params: { days: 7 },
     weight: 2,
-    displayTemplate: "Blocked for {daysSince} day(s)",
+    displayTemplate: "{blockedTaskCount} task(s) blocked for more than {days} day(s)",
   },
   {
     code: "R-CUSTODY-LONG",
@@ -190,6 +190,6 @@ export const DEFAULT_RULESET: readonly DefaultRuleSeed[] = [
     conditionType: "CUSTODY_DURATION_EXCEEDS_DAYS",
     params: { days: 180 },
     weight: 1,
-    displayTemplate: "In custody for {daysSince} day(s)",
+    displayTemplate: "In custody for {custodyDurationDays} day(s)",
   },
 ] as const;
