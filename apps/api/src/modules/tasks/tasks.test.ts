@@ -7,7 +7,7 @@ import {
   createTestCase,
   createTestUser,
   resetDatabase,
-  seedDefaultRuleset,
+  seedQueuePolicy,
 } from "../../test/dbHelpers.js";
 import { loginAs } from "../../test/httpHelpers.js";
 
@@ -20,7 +20,7 @@ describe("tasks", () => {
     // Task mutations recompute priority (spec §6.7), which requires an
     // active RulesetConfig — seed it here rather than in every `it`.
     const system = await createTestUser({ role: "ADMIN", email: "system@justicegrid.test" });
-    await seedDefaultRuleset(system.id);
+    await seedQueuePolicy(system.id);
   });
 
   it("creates a task on a case", async () => {

@@ -5,6 +5,10 @@ import { z } from "zod";
  * its envelope's `error.code` field.
  */
 export const ERROR_CODE_VALUES = [
+  "CAPACITY_EXCEEDED",
+  "RULE_PARSE_ERROR",
+  "CYCLE_DETECTED",
+  "DEPENDENCY_BLOCKED",
   "VALIDATION_ERROR",
   "UNAUTHENTICATED",
   "TOKEN_EXPIRED",
@@ -26,6 +30,10 @@ export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
  * vocabulary across route handlers.
  */
 export const ERROR_CODE_HTTP_STATUS: Record<ErrorCode, number> = {
+  CAPACITY_EXCEEDED: 409,
+  RULE_PARSE_ERROR: 400,
+  CYCLE_DETECTED: 422,
+  DEPENDENCY_BLOCKED: 409,
   VALIDATION_ERROR: 400,
   UNAUTHENTICATED: 401,
   TOKEN_EXPIRED: 401,

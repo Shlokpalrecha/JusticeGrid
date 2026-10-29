@@ -1,73 +1,115 @@
 import { z } from "zod";
-import { EvaluationTriggerSchema, PriorityLevelSchema, RuleCategorySchema } from "../enums.js";
+import { PriorityLevelSchema } from "../enums.js";
 import { IdSchema, IsoDateTimeSchema } from "./common.js";
 import { PaginationQuerySchema } from "../envelope.js";
 import { UserRefSchema } from "./user.js";
-
-/**
- * Wire mirror of packages/rules-engine's `TriggeredReasonResult` (spec
- * §6.1), as persisted to and read back from the TriggeredReason table.
- */
-export const TriggeredReasonSchema = z.object({
-  id: IdSchema,
-  evaluationId: IdSchema,
-  ruleId: IdSchema.nullable(),
-  ruleCode: z.string(),
-  ruleName: z.string(),
-  points: z.number().int(),
-  category: RuleCategorySchema,
-  reasonText: z.string(),
-  evidence: z.record(z.string(), z.unknown()),
-  orderIndex: z.number().int(),
+import {
+  ActionStatusSchema,
+  ActionTypeSchema,
+  ConfidenceSchema,
+  DeadlineOriginSchema,
+  SourceIdSchema,
+} from "./workflow.js";
+export const ActionResultSchema = z.object({
+  ruleTrace: z
+    .array(
+      z.object({
+        id: z.string(),
+        expression: z.string(),
+        result: z.boolean().nullable(),
+        value: z.number().nullable(),
+      }),
+    )
+    .optional(),
+  ownerOverride: z.string().nullable().optional(),
+  sourceKey: z.string().optional(),
+  nextReviewAt: IsoDateTimeSchema.nullable().optional(),
+  id: z.string(),
+  key: z.string(),
+  type: ActionTypeSchema,
+  title: z.string(),
+  status: ActionStatusSchema,
+  activatedAt: IsoDateTimeSchema,
+  dueAt: IsoDateTimeSchema.nullable(),
+  origin: DeadlineOriginSchema,
+  confidence: ConfidenceSchema,
+  sourceId: SourceIdSchema,
+  locator: z.string(),
+  evidence: z.string(),
+  ownerId: z.string().nullable(),
+  critical: z.boolean(),
+  forthwith: z.boolean(),
+  retainedAfterClosure: z.boolean(),
+  parentKey: z.string().nullable(),
+  hearingId: z.string().nullable(),
+  blocker: z.enum(["NONE", "ORDINARY", "NECESSARY"]),
+  criticalDataMissing: z.boolean(),
+  ordinaryDataMissing: z.boolean(),
+  acknowledgedAt: IsoDateTimeSchema.nullable(),
+  resolvedAt: IsoDateTimeSchema.nullable(),
+  resolutionEvidence: z.string().nullable(),
+  override: z
+    .object({
+      urgency: PriorityLevelSchema,
+      reason: z.string(),
+      expiresAt: IsoDateTimeSchema,
+      reviewerId: z.string(),
+    })
+    .nullable(),
+  urgency: PriorityLevelSchema,
+  originalUrgency: PriorityLevelSchema,
+  orderingDeadline: IsoDateTimeSchema.nullable(),
+  supportScore: z.number().int().min(0).max(20),
+  components: z.object({
+    H: z.number(),
+    A: z.number(),
+    B: z.number(),
+    D: z.number(),
+    F: z.number(),
+  }),
+  explanation: z.string(),
+  warnings: z.array(z.string()),
+  suppressedDuplicates: z.number().int(),
 });
-export type TriggeredReasonDto = z.infer<typeof TriggeredReasonSchema>;
-
-/**
- * Wire mirror of packages/rules-engine's `EvaluationResult` (spec §6.1),
- * as persisted to and read back from the PriorityEvaluation table, with
- * its `reasons` populated from TriggeredReason rows for display in the
- * Priority Queue's explanation panel (spec §9, screen 3).
- */
+export type ActionResultDto = z.infer<typeof ActionResultSchema>;
 export const PriorityEvaluationSchema = z.object({
   id: IdSchema,
   caseId: IdSchema,
+  caseRef: z.string(),
   evaluatedAt: IsoDateTimeSchema,
-  totalScore: z.number().int(),
-  rawScore: z.number().int(),
   priorityLevel: PriorityLevelSchema,
-  rulesetVersion: z.number().int(),
-  engineVersion: z.string(),
-  inputHash: z.string(),
-  triggeredCount: z.number().int(),
-  durationMs: z.number().int(),
-  triggeredBy: EvaluationTriggerSchema,
-  triggeredById: IdSchema.nullable(),
-  reasons: z.array(TriggeredReasonSchema),
-  // Not a PriorityEvaluation column (spec §5's exact field list has
-  // none) — the arithmetic line spec §9 requires the UI to show (e.g.
-  // "4 + 4 + 3 = 11 → HIGH (≥ 7)") is reconstructed on read from the
-  // stored reasons/scores plus the historical RulesetConfig row matching
-  // `rulesetVersion`, via the rules-engine's own exported
-  // `buildExplanation`, not stored separately. See
-  // apps/api/src/lib/priorityEvaluation.ts.
+  supportScore: z.number().int().min(0).max(20),
+  plannedReviewAt: IsoDateTimeSchema.nullable(),
+  selectedAction: ActionResultSchema.nullable(),
+  actions: z.array(ActionResultSchema),
   explanation: z.string(),
+  lastCheckedAt: IsoDateTimeSchema.optional(),
+  nextCheckAt: IsoDateTimeSchema.nullable().optional(),
+  nextEvaluationAt: IsoDateTimeSchema,
+  policyVersion: z.number().int(),
+  engineVersion: z.string(),
+  evaluationKey: z.string(),
+  factsHash: z.string(),
+  outcomeHash: z.string(),
+  warnings: z.array(z.string()),
+  nextHearingAt: IsoDateTimeSchema.nullable(),
+  consecutiveAdjournments: z.number().int(),
+  included: z.boolean(),
+  triggeredBy: z.string(),
+  triggeredById: IdSchema.nullable(),
+  stale: z.boolean(),
+  error: z.string().nullable(),
 });
 export type PriorityEvaluationDto = z.infer<typeof PriorityEvaluationSchema>;
-
-/** Queue filter params (spec §9 screen 3: priority band, assignee, hearing
- * window, reason/rule code). */
 export const PriorityQueueFilterSchema = PaginationQuerySchema.extend({
   priority: PriorityLevelSchema.optional(),
   assignedTo: IdSchema.optional(),
   hearingFrom: IsoDateTimeSchema.optional(),
   hearingTo: IsoDateTimeSchema.optional(),
-  ruleCode: z.string().optional(),
+  actionType: ActionTypeSchema.optional(),
+  lane: z.enum(["REFERRAL", "LEGAL_DEADLINE", "OLDEST"]).optional(),
 }).strict();
 export type PriorityQueueFilter = z.infer<typeof PriorityQueueFilterSchema>;
-
-/** One ranked row in the Priority Queue (spec §9 screen 3): case
- * context plus its current evaluation, full reasons included so the
- * explanation panel needs no second round trip when a row expands. */
 export const PriorityQueueItemSchema = z.object({
   rank: z.number().int(),
   caseId: IdSchema,
@@ -78,10 +120,10 @@ export const PriorityQueueItemSchema = z.object({
   evaluation: PriorityEvaluationSchema,
 });
 export type PriorityQueueItemDto = z.infer<typeof PriorityQueueItemSchema>;
-
 export const PriorityDistributionSchema = z.object({
-  ROUTINE: z.number().int(),
-  MEDIUM: z.number().int(),
-  HIGH: z.number().int(),
+  U0: z.number().int(),
+  U1: z.number().int(),
+  U2: z.number().int(),
+  U3: z.number().int(),
 });
 export type PriorityDistribution = z.infer<typeof PriorityDistributionSchema>;

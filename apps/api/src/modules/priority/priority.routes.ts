@@ -1,3 +1,4 @@
+import { replayEvaluation } from "./priority.service.js";
 import { Router } from "express";
 import { z } from "zod";
 import { PriorityQueueFilterSchema } from "@justicegrid/shared";
@@ -49,4 +50,14 @@ priorityRouter.get(
   requireAuth,
   requireCapability("VIEW_FULL_PRIORITY_QUEUE"),
   getDistributionHandler,
+);
+
+priorityRouter.get(
+  "/evaluations/:id/replay",
+  requireAuth,
+  requireCapability("VIEW_ANY_CASE"),
+  async (req, res) => {
+    if (!req.user) return;
+    res.json({ success: true, data: await replayEvaluation(req.user, req.params.id!) });
+  },
 );

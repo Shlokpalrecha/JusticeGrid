@@ -7,7 +7,7 @@ import {
   createTestCase,
   createTestUser,
   resetDatabase,
-  seedDefaultRuleset,
+  seedQueuePolicy,
 } from "../../test/dbHelpers.js";
 import { loginAs } from "../../test/httpHelpers.js";
 
@@ -20,7 +20,7 @@ describe("hearings — functional", () => {
     // Hearing mutations recompute priority (spec §6.7), which requires
     // an active RulesetConfig — seed it here rather than in every `it`.
     const system = await createTestUser({ role: "ADMIN", email: "system@justicegrid.test" });
-    await seedDefaultRuleset(system.id);
+    await seedQueuePolicy(system.id);
   });
 
   it("lists hearings for a case, ascending by scheduledDate", async () => {
@@ -86,6 +86,7 @@ describe("hearings — functional", () => {
         hearingType: "BAIL_HEARING",
         recordedById: admin.id,
         orderSummary: "Bail denied",
+        orderReceivedAt: new Date("2026-06-02T00:00:00Z"),
       },
     });
     const token = await loginAs(app, admin.email);

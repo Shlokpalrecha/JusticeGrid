@@ -6,6 +6,8 @@ import { PaginationQuerySchema } from "../envelope.js";
 export const TaskSchema = z.object({
   id: IdSchema,
   caseId: IdSchema,
+  hearingId: IdSchema.nullable(),
+  actionKey: z.string().nullable(),
   title: z.string().min(1),
   description: z.string().nullable(),
   category: TaskCategorySchema,
@@ -32,6 +34,8 @@ export type TaskDto = z.infer<typeof TaskSchema>;
 export const TaskCreateInputSchema = z
   .object({
     title: z.string().min(1),
+    hearingId: IdSchema.nullable().optional(),
+    actionKey: z.string().nullable().optional(),
     description: z.string().optional(),
     category: TaskCategorySchema,
     assignedToId: IdSchema.optional(),

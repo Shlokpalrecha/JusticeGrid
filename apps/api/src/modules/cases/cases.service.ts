@@ -1,3 +1,5 @@
+import { lockCaseWorkflow, invalidateLegalReviews } from "../../lib/workflowLinks.js";
+
 import type { Case, User } from "@prisma/client";
 import {
   AppError,
@@ -99,8 +101,8 @@ export async function listCases(
   }
   if (filter.status) where.caseStatus = filter.status;
   if (filter.priority) where.currentPriorityLevel = filter.priority;
-  if (filter.assignedTo) where.assignedToId = filter.assignedTo;
-  if (filter.unassigned) where.assignedToId = null;
+  if (filter.assignedTo || filter.unassigned)
+    where.AND = [{ assignedToId: filter.unassigned ? null : filter.assignedTo }];
   if (filter.custodyType) where.custodyType = filter.custodyType;
   if (filter.bailStatus) where.bailStatus = filter.bailStatus;
   if (filter.district) where.district = filter.district;
@@ -125,7 +127,14 @@ export async function listCases(
         ? [{ caseRef: "asc" as const }]
         : filter.sort === "createdAt"
           ? [{ createdAt: "desc" as const }]
-          : [{ currentPriorityScore: "desc" as const }, { caseRef: "asc" as const }];
+          : [
+              { currentPriorityLevel: "asc" as const },
+              { queueDeadline: "asc" as const },
+              { currentPriorityScore: "desc" as const },
+              { queueActivatedAt: "asc" as const },
+              { caseRef: "asc" as const },
+              { id: "asc" as const },
+            ];
 
   const [rows, total] = await Promise.all([
     prisma.case.findMany({
@@ -272,6 +281,7 @@ export async function createCase(
   const now = new Date();
 
   const created = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx);
     const caseRow = await tx.case.create({
       data: {
         caseRef: input.caseRef,
@@ -342,6 +352,10 @@ export async function updateCase(
   }
 
   const updated = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, caseId);
+    await loadAccessibleCase(tx, actor, caseId);
+    if (input.custodyStartDate || input.custodyType)
+      await invalidateLegalReviews(tx, caseId, "Custody basis changed; reconfirm dependent dates.");
     const caseRow = await tx.case.update({
       where: { id: caseId },
       data: {
@@ -390,6 +404,8 @@ export async function assignCase(
 
   const now = new Date();
   const updated = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, caseId);
+    await loadAccessibleCase(tx, actor, caseId);
     const caseRow = await tx.case.update({
       where: { id: caseId },
       data: {
@@ -443,6 +459,8 @@ export async function unassignCase(
   if (!existing || existing.deletedAt) throw new AppError("NOT_FOUND", "Case not found.");
 
   const updated = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, caseId);
+    await loadAccessibleCase(tx, actor, caseId);
     const caseRow = await tx.case.update({
       where: { id: caseId },
       data: {
@@ -486,6 +504,8 @@ export async function archiveCase(
   const existing = await loadAccessibleCase(prisma, actor, caseId);
 
   const updated = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, caseId);
+    await loadAccessibleCase(tx, actor, caseId);
     const caseRow = await tx.case.update({
       where: { id: caseId },
       data: { isArchived: true, archivedReason: input.archivedReason, lastActivityAt: new Date() },
@@ -524,6 +544,13 @@ export async function addCharge(
   const caseRow = await loadAccessibleCase(prisma, actor, caseId);
 
   const charge = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, caseId);
+    await loadAccessibleCase(tx, actor, caseId);
+    await invalidateLegalReviews(
+      tx,
+      caseId,
+      "Charges changed; reconfirm current charges and dependent dates.",
+    );
     const c = await tx.charge.create({
       data: {
         caseId,
@@ -559,6 +586,8 @@ export async function addCaseNote(
   const caseRow = await loadAccessibleCase(prisma, actor, caseId);
 
   const note = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, caseId);
+    await loadAccessibleCase(tx, actor, caseId);
     const n = await tx.caseNote.create({
       data: { caseId, authorId: actor.id, body: input.body, isInternal: input.isInternal },
     });

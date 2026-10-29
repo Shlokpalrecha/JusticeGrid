@@ -2,7 +2,7 @@
   "name": "justicegrid",
   "version": "0.1.0",
   "private": true,
-  "description": "JusticeGrid — an academic prototype for explainable legal-aid workflow prioritization. Synthetic data only. Not a legal or judicial decision system.",
+  "description": "JusticeGrid \u2014 an academic prototype for explainable legal-aid workflow prioritization. Synthetic data only. Not a legal or judicial decision system.",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=20 <21",
@@ -27,7 +27,8 @@
     "diagrams": "node scripts/render-diagrams.mjs",
     "docs": "echo 'See docs/ for all written documentation.'",
     "ci": "pnpm install --frozen-lockfile && pnpm typecheck && pnpm lint && pnpm test",
-    "prepare": "husky"
+    "prepare": "husky",
+    "systems:stress": "node scripts/systems-stress.mjs"
   },
   "devDependencies": {
     "turbo": "2.3.3",

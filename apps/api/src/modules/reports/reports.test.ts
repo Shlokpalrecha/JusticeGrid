@@ -7,7 +7,7 @@ import {
   createTestCase,
   createTestUser,
   resetDatabase,
-  seedDefaultRuleset,
+  seedQueuePolicy,
 } from "../../test/dbHelpers.js";
 import { loginAs } from "../../test/httpHelpers.js";
 
@@ -125,7 +125,7 @@ describe("reports", () => {
 
   it("GET /reports/priority-distribution matches GET /priority/distribution", async () => {
     const admin = await createTestUser({ role: "ADMIN" });
-    await seedDefaultRuleset(admin.id);
+    await seedQueuePolicy(admin.id);
     await createTestCase({ createdById: admin.id, assignedToId: admin.id });
     const token = await loginAs(app, admin.email);
 
@@ -205,9 +205,9 @@ describe("reports", () => {
     expect(ids).toEqual([older.id, newer.id, noCustody.id]);
   });
 
-  it("GET /reports/rule-trigger-frequency tallies rules from the latest evaluation per case", async () => {
+  it("GET /reports/action-frequency tallies rules from the latest evaluation per case", async () => {
     const admin = await createTestUser({ role: "ADMIN" });
-    await seedDefaultRuleset(admin.id);
+    await seedQueuePolicy(admin.id);
     // Bare, unassigned case: triggers R-NO-ASSIGNEE, R-CASE-INCOMPLETE,
     // R-NO-HEARING-DATE at creation-adjacent recompute.
     const caseRow = await createTestCase({
@@ -220,14 +220,14 @@ describe("reports", () => {
       .set("Authorization", `Bearer ${token}`);
 
     const res = await request(app)
-      .get("/api/v1/reports/rule-trigger-frequency")
+      .get("/api/v1/reports/action-frequency")
       .set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
-    const codes = res.body.data.map((r: { ruleCode: string }) => r.ruleCode);
-    expect(codes).toContain("R-NO-ASSIGNEE");
-    expect(codes).toContain("R-CASE-INCOMPLETE");
-    expect(codes).toContain("R-NO-HEARING-DATE");
+    const codes = res.body.data.map((r: { actionType: string }) => r.actionType);
+    expect(codes).toContain("A16");
+    expect(codes).toContain("A16");
+    expect(codes).toContain("A11");
     for (const row of res.body.data) {
       expect(row.triggerCount).toBe(1);
     }
@@ -273,7 +273,7 @@ describe("reports", () => {
 
   it("GET /reports/:name/export.csv returns CSV content and logs an EXPORT audit entry", async () => {
     const admin = await createTestUser({ role: "ADMIN" });
-    await seedDefaultRuleset(admin.id);
+    await seedQueuePolicy(admin.id);
     await createTestCase({ createdById: admin.id, assignedToId: admin.id });
     const token = await loginAs(app, admin.email);
 
@@ -285,7 +285,7 @@ describe("reports", () => {
     expect(res.headers["content-type"]).toMatch(/text\/csv/);
     expect(res.headers["content-disposition"]).toContain("priority-distribution.csv");
     expect(res.text).toContain("Priority Level,Count");
-    expect(res.text).toContain("ROUTINE,");
+    expect(res.text).toContain("U3,");
 
     const audit = await prisma.auditLog.findFirst({
       where: { action: "EXPORT", entityType: "Report", entityLabel: "priority-distribution" },

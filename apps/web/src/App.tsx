@@ -1,3 +1,4 @@
+import {SystemsPage} from "./pages/SystemsPage";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
@@ -9,7 +10,7 @@ import { PriorityQueuePage } from "./pages/PriorityQueuePage";
 import { CasesListPage } from "./pages/CasesListPage";
 import { CaseDetailPage } from "./pages/CaseDetailPage";
 import { MyTasksPage } from "./pages/MyTasksPage";
-import { RulesAdminPage } from "./pages/RulesAdminPage";
+import { QueuePolicyPage } from "./pages/QueuePolicyPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { AuditLogPage } from "./pages/AuditLogPage";
 import { SearchResultsPage } from "./pages/SearchResultsPage";
@@ -35,7 +36,8 @@ export default function App() {
               <Route path="/cases" element={<CasesListPage />} />
               <Route path="/cases/:id" element={<CaseDetailPage />} />
               <Route path="/tasks" element={<MyTasksPage />} />
-              <Route path="/rules" element={<RulesAdminPage />} />
+              <Route path="/systems" element={<SystemsPage/>}/>
+              <Route path="/queue-policy" element={<QueuePolicyPage />} />
               <Route path="/reports" element={<ReportsPage />} />
               <Route path="/audit" element={<AuditLogPage />} />
               <Route path="/search" element={<SearchResultsPage />} />

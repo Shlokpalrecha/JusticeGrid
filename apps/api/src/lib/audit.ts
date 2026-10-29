@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import type { AuditAction, AuditLog, Prisma, PrismaClient, Role } from "@prisma/client";
+import {
+  Prisma,
+  type AuditAction,
+  type AuditLog,
+  type PrismaClient,
+  type Role,
+} from "@prisma/client";
 import type { AuditLogDto } from "@justicegrid/shared";
 
 /**
@@ -25,16 +31,9 @@ import type { AuditLogDto } from "@justicegrid/shared";
  * durable). This is internal plumbing inside one atomic transaction, not
  * an exposed UPDATE endpoint.
  *
- * Known limitation for a low-concurrency academic prototype: under truly
- * concurrent writers, two transactions could theoretically both read the
- * same "latest" row as their previousHash before either commits. Since
- * `sequence` itself is still strictly monotonic (Postgres guarantees
- * that independent of this code), such a race would surface as a
- * detected break when `verifyAuditChain` is run — which is the correct,
- * honest behaviour for a tamper-evident log: it should report a real
- * inconsistency rather than silently paper over it. Production hardening
- * would wrap the audit-append step in `SERIALIZABLE` isolation or an
- * advisory lock.
+ * Writers hold a transaction-scoped advisory mutex before reserving sequence
+ * numbers; concurrent appends cannot fork either hash chain. Activity_Log
+ * rows are final on INSERT and a database trigger rejects UPDATE/DELETE.
  */
 
 const GENESIS_HASH = "0".repeat(64);
@@ -142,9 +141,10 @@ export async function writeAuditEntry(
   request: AuditRequestContext,
   input: WriteAuditEntryInput,
 ): Promise<AuditLog> {
-  const before = input.before ?? null;
-  const after = input.after ?? null;
-  const changedFields = diffChangedFields(input.before, input.after);
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('justicegrid-audit-chain'))`;
+  const before: unknown = input.before == null ? null : JSON.parse(JSON.stringify(input.before));
+  const after: unknown = input.after == null ? null : JSON.parse(JSON.stringify(input.after));
+  const changedFields = diffChangedFields(before, after);
 
   const created = await tx.auditLog.create({
     data: {
@@ -190,10 +190,43 @@ export async function writeAuditEntry(
     previousHash,
   });
 
-  return tx.auditLog.update({
+  const finalized = await tx.auditLog.update({
     where: { id: created.id },
     data: { previousHash, hash },
   });
+  const previous = await tx.activityLedger.findFirst({
+    orderBy: { sequence: "desc" },
+    select: { hash: true },
+  });
+  const sequence = (
+    await tx.$queryRaw<
+      { value: bigint }[]
+    >`SELECT nextval(pg_get_serial_sequence('"Activity_Log"','sequence')) AS value`
+  )[0]!.value;
+  const timestamp = new Date();
+  const ledger = {
+    sequence: sequence.toString(),
+    userId: actor.id,
+    timestamp: timestamp.toISOString(),
+    actionType: input.action,
+    entityType: input.entityType,
+    entityId: input.entityId ?? null,
+    oldValue: before,
+    newValue: after,
+    requestId: request.requestId,
+    previousHash: previous?.hash ?? GENESIS_HASH,
+  };
+  await tx.activityLedger.create({
+    data: {
+      ...ledger,
+      sequence,
+      timestamp,
+      oldValue: before === null ? Prisma.JsonNull : (before as Prisma.InputJsonValue),
+      newValue: after === null ? Prisma.JsonNull : (after as Prisma.InputJsonValue),
+      hash: sha256Hex(canonicalJson(ledger)),
+    },
+  });
+  return finalized;
 }
 
 export interface ChainVerificationResult {
@@ -271,4 +304,38 @@ export function toAuditLogDto(e: AuditLog): AuditLogDto {
     hash: e.hash,
     createdAt: e.createdAt.toISOString(),
   };
+}
+
+/** Cursor-streamed verification has bounded memory, independent of ledger size. */
+export async function verifyActivityLedger(client: PrismaClient | Prisma.TransactionClient) {
+  // Pin the visible head so a stream of concurrent appends cannot prolong verification forever.
+  const head = await client.activityLedger.findFirst({
+    orderBy: { sequence: "desc" },
+    select: { sequence: true },
+  });
+  const upper = head?.sequence ?? 0n;
+  let cursor = 0n,
+    previousHash = GENESIS_HASH,
+    entriesChecked = 0;
+  while (true) {
+    const rows = await client.activityLedger.findMany({
+      where: { sequence: { gt: cursor, lte: upper } },
+      orderBy: { sequence: "asc" },
+      take: 500,
+    });
+    for (const row of rows) {
+      const { hash, ...fields } = row;
+      const payload = {
+        ...fields,
+        sequence: row.sequence.toString(),
+        timestamp: row.timestamp.toISOString(),
+      };
+      if (row.previousHash !== previousHash || sha256Hex(canonicalJson(payload)) !== hash)
+        return { intact: false, entriesChecked, firstBreakAtSequence: row.sequence.toString() };
+      previousHash = hash;
+      cursor = row.sequence;
+      entriesChecked++;
+    }
+    if (rows.length < 500) return { intact: true, entriesChecked, firstBreakAtSequence: null };
+  }
 }

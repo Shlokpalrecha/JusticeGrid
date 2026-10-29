@@ -63,7 +63,7 @@ reportsRouter.get(
   caseAgingHandler,
 );
 reportsRouter.get(
-  "/rule-trigger-frequency",
+  "/action-frequency",
   requireAuth,
   requireCapability("EXPORT_REPORTS"),
   ruleTriggerFrequencyHandler,

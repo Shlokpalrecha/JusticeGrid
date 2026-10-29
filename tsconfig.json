@@ -9,5 +9,5 @@
   // ESM JS tooling files — covered by Prettier, not typed linting (turbo's
   // `pnpm lint` is scoped to workspace packages and never reaches them
   // either).
-  "include": ["playwright.config.ts"]
+  "include": ["playwright.config.ts", "e2e/**/*.ts"]
 }

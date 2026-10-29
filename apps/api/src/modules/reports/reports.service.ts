@@ -8,13 +8,13 @@ import {
   type PriorityDistribution,
   type ReportExportQuery,
   type ReportName,
-  type RuleTriggerFrequencyRow,
+  type ActionFrequencyRow,
   type UpcomingHearingRow,
 } from "@justicegrid/shared";
 import { hasUnscopedCaseVisibility } from "../../lib/caseAccess.js";
 import { type CsvValue, toCsv } from "../../lib/csv.js";
 import { prisma } from "../../lib/prisma.js";
-import { getDistribution } from "../priority/priority.service.js";
+import { getDistribution, refreshScope } from "../priority/priority.service.js";
 
 interface ActorContext {
   id: string;
@@ -211,36 +211,34 @@ export async function getCaseAging(actor: ActorContext): Promise<CaseAgingRow[]>
     });
 }
 
-/** `GET /reports/rule-trigger-frequency` (spec §7): tallies how many
+/** `GET /reports/action-frequency` (spec §7): tallies how many
  * cases' CURRENT (latest) evaluation includes each rule — one row per
  * `PriorityEvaluation` per case via Prisma's `distinct` + matching
  * `orderBy`, the standard "latest row per group" pattern. */
-export async function getRuleTriggerFrequency(
-  actor: ActorContext,
-): Promise<RuleTriggerFrequencyRow[]> {
+export async function getActionFrequency(actor: ActorContext): Promise<ActionFrequencyRow[]> {
+  await refreshScope(actor);
   const caseIds = (
     await prisma.case.findMany({ where: caseScopeWhere(actor), select: { id: true } })
   ).map((c) => c.id);
   if (caseIds.length === 0) return [];
 
-  const latestEvaluations = await prisma.priorityEvaluation.findMany({
+  const rows = await prisma.queueEvaluation.findMany({
     where: { caseId: { in: caseIds } },
     orderBy: [{ caseId: "asc" }, { evaluatedAt: "desc" }],
     distinct: ["caseId"],
-    include: { reasons: { select: { ruleCode: true, ruleName: true } } },
   });
-
-  const tally = new Map<string, { ruleName: string; count: number }>();
-  for (const evaluation of latestEvaluations) {
-    for (const reason of evaluation.reasons) {
-      const entry = tally.get(reason.ruleCode) ?? { ruleName: reason.ruleName, count: 0 };
-      entry.count += 1;
-      tally.set(reason.ruleCode, entry);
+  const tally = new Map<string, { actionName: string; count: number }>();
+  for (const row of rows) {
+    const evaluation = row.result as unknown as { actions: { type: string; title: string }[] };
+    for (const type of new Set(evaluation.actions.map((a) => a.type))) {
+      const name = evaluation.actions.find((a) => a.type === type)!.title;
+      const entry = tally.get(type) ?? { actionName: name, count: 0 };
+      entry.count++;
+      tally.set(type, entry);
     }
   }
-
   return [...tally.entries()]
-    .map(([ruleCode, { ruleName, count }]) => ({ ruleCode, ruleName, triggerCount: count }))
+    .map(([actionType, { actionName, count }]) => ({ actionType, actionName, triggerCount: count }))
     .sort((a, b) => b.triggerCount - a.triggerCount);
 }
 
@@ -296,9 +294,10 @@ export async function getReportCsv(
       return toCsv(
         ["Priority Level", "Count"],
         [
-          ["ROUTINE", dist.ROUTINE],
-          ["MEDIUM", dist.MEDIUM],
-          ["HIGH", dist.HIGH],
+          ["U0", dist.U0],
+          ["U1", dist.U1],
+          ["U2", dist.U2],
+          ["U3", dist.U3],
         ],
       );
     }
@@ -322,11 +321,11 @@ export async function getReportCsv(
         ]),
       );
     }
-    case "rule-trigger-frequency": {
-      const rows = await getRuleTriggerFrequency(actor);
+    case "action-frequency": {
+      const rows = await getActionFrequency(actor);
       return toCsv(
-        ["Rule Code", "Rule Name", "Trigger Count"],
-        rows.map((r): CsvValue[] => [r.ruleCode, r.ruleName, r.triggerCount]),
+        ["Action Category", "Action Name", "Case Count"],
+        rows.map((r): CsvValue[] => [r.actionType, r.actionName, r.triggerCount]),
       );
     }
     default: {

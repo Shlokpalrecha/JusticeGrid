@@ -58,3 +58,7 @@ docs/diagrams/*.png.tmp
 
 # Claude Code session-internal state, not project source
 .claude/
+
+# Local implementation scratch and generated lint reports
+tmp/
+/*-lint.json

@@ -1,13 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
-/**
- * The 6 mandatory fixture cases (spec §10) — hand-crafted, not generated,
- * so their setups are exact and repeatable for the viva demo and golden
- * snapshot tests. Each one is built to structurally trigger the rules
- * spec §10's table names; the exact resulting score depends on the live
- * ruleset (packages/lib/defaultRuleset.ts) at seed time, not hard-coded
- * here, so it stays correct if that table is ever retuned.
- */
+/** Base synthetic operational records. workflows.ts supplies the v2 examples.
+ * Prior additive-rule labels are retired; priority is evaluated from current facts. */
 export async function seedFixtureCases(
   prisma: PrismaClient,
   ctx: { adminId: string; lawyerId: string; now: Date },
@@ -31,7 +25,7 @@ export async function seedFixtureCases(
   }
 
   // JG-2026-0001 "Case A" — hearing in 2 days, incomplete prep task,
-  // overdue follow-up task, mandatory FIR copy missing → HIGH.
+  // overdue follow-up task, mandatory FIR copy missing (priority derived by v2).
   {
     const p = await person("UT-0001", "Fictional Person A");
     const c = await prisma.case.create({
@@ -106,7 +100,7 @@ export async function seedFixtureCases(
   }
 
   // JG-2026-0002 "Case B" — hearing 25 days away, all documents
-  // verified, no pending tasks → ROUTINE.
+  // verified, no pending tasks (priority derived by v2).
   {
     const p = await person("UT-0002", "Fictional Person B");
     const c = await prisma.case.create({

@@ -18,7 +18,8 @@
     "SEED_DATE",
     "DEMO_MODE",
     "VITE_API_URL",
-    "VITE_DEMO_MODE"
+    "VITE_DEMO_MODE",
+    "TEST_DATABASE_URL"
   ],
   "tasks": {
     "build": {

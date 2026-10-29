@@ -7,6 +7,8 @@ export const HearingSchema = z.object({
   caseId: IdSchema,
   scheduledDate: IsoDateTimeSchema,
   actualDate: IsoDateTimeSchema.nullable(),
+  orderExpected: z.boolean(),
+  orderReceivedAt: IsoDateTimeSchema.nullable(),
   hearingType: HearingTypeSchema,
   purpose: z.string().nullable(),
   outcome: HearingOutcomeSchema,
@@ -32,6 +34,9 @@ export type HearingDto = z.infer<typeof HearingSchema>;
 export const HearingCreateInputSchema = z
   .object({
     scheduledDate: IsoDateTimeSchema,
+    actualDate: IsoDateTimeSchema.nullable().optional(),
+    orderExpected: z.boolean().optional(),
+    orderReceivedAt: IsoDateTimeSchema.nullable().optional(),
     hearingType: HearingTypeSchema,
     purpose: z.string().optional(),
     outcome: HearingOutcomeSchema.default("PENDING"),

@@ -125,10 +125,17 @@ enum DocumentType {
   OTHER
 }
 
-enum PriorityLevel {
+enum LegacyPriorityLevel {
   ROUTINE
   MEDIUM
   HIGH
+}
+
+enum PriorityLevel {
+  U0
+  U1
+  U2
+  U3
 }
 
 enum RuleCategory {
@@ -246,6 +253,9 @@ model User {
   evaluationsTriggered  PriorityEvaluation[]    @relation("PriorityEvaluationTriggeredBy")
   auditEntries          AuditLog[]              @relation("AuditLogActor")
   notifications         Notification[]
+  systemRecords         SystemRecord[]
+  ledgerEntries         ActivityLedger[]
+  ruleEvidenceReviews   CaseRuleEvidence[]
   savedFilters          SavedFilter[]
 
   @@index([role])
@@ -302,6 +312,9 @@ model Case {
   id                   String         @id @default(cuid())
   caseRef              String         @unique
   personId             String
+  workflowGraph        WorkflowGraph?
+  systemRecords        SystemRecord[]
+  ruleEvidence         CaseRuleEvidence?
   courtName            String
   courtType            String
   district             String
@@ -340,6 +353,15 @@ model Case {
   assignedBy User?  @relation("CaseAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
   createdBy  User   @relation("CaseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
+  workflowFacts         Json              @default("{}")
+  workflowRevision      Int               @default(0)
+  queueNextEvaluationAt DateTime?
+  queueError            String?
+  queueDeadline         DateTime?
+  queueActivatedAt      DateTime?
+  workflowActions       WorkflowAction[]
+  queueEvaluations      QueueEvaluation[]
+
   charges             Charge[]
   hearings            Hearing[]
   tasks               Task[]
@@ -354,6 +376,7 @@ model Case {
   @@index([currentPriorityScore])
   @@index([assignedToId, currentPriorityScore])
   @@index([lastActivityAt])
+  @@index([queueNextEvaluationAt])
 }
 
 model Charge {
@@ -375,6 +398,8 @@ model Hearing {
   id                String         @id @default(cuid())
   caseId            String
   scheduledDate     DateTime
+  orderExpected     Boolean        @default(false)
+  orderReceivedAt   DateTime?
   actualDate        DateTime?
   hearingType       HearingType
   purpose           String?
@@ -397,8 +422,7 @@ model Hearing {
   @@index([caseId, scheduledDate])
 }
 
-/// isPreparationTask marks a task as hearing-preparation, consumed by the
-/// HEARING_WITHIN_DAYS_AND_PREP_INCOMPLETE rule condition (spec §6.3).
+/// Preparation is linked to a particular hearing/action for the v2 action queue.
 model Task {
   id                String       @id @default(cuid())
   caseId            String
@@ -410,18 +434,14 @@ model Task {
   dueDate           DateTime
   status            TaskStatus   @default(PENDING)
   blockedReason     String?
-  // Not in spec §5's literal Task field list, but required to fill an
-  // otherwise-unfillable gap: the rules-engine's TaskInput contract
-  // (spec §6.1) requires `blockedSince` for TASK_BLOCKED_OVER_DAYS (used
-  // by the default R-TASK-BLOCKED rule, spec §6.6) — without a
-  // timestamp for when a task *became* blocked, "blocked for > N days"
-  // cannot be computed at all. Set when status transitions to BLOCKED,
-  // cleared when it transitions away (see tasks.service.ts).
+  // Operational history of the current blocked episode; no additive duration points.
   blockedSince      DateTime?
   completedAt       DateTime?
   completedById     String?
   completionNote    String?
   cancelledReason   String?
+  hearingId         String?
+  actionKey         String?
   isPreparationTask Boolean      @default(false)
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
@@ -440,6 +460,8 @@ model DocumentRequirement {
   id           String         @id @default(cuid())
   caseId       String
   documentType DocumentType
+  hearingId    String?
+  actionKey    String?
   isMandatory  Boolean        @default(true)
   status       DocumentStatus @default(MISSING)
   requestedAt  DateTime?
@@ -569,12 +591,12 @@ model RulesetConfig {
 // ─────────────────────────────────────────────────────────────────────────
 
 model PriorityEvaluation {
-  id             String            @id @default(cuid())
+  id             String              @id @default(cuid())
   caseId         String
-  evaluatedAt    DateTime          @default(now())
+  evaluatedAt    DateTime            @default(now())
   totalScore     Int
   rawScore       Int
-  priorityLevel  PriorityLevel
+  priorityLevel  LegacyPriorityLevel
   rulesetVersion Int
   engineVersion  String
   inputHash      String
@@ -676,4 +698,195 @@ model SavedFilter {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+/// Active v2 policy. Previous Rule/RulesetConfig/PriorityEvaluation models are historical only.
+model QueuePolicy {
+  id           String   @id @default(cuid())
+  version      Int      @unique
+  config       Json
+  isActive     Boolean  @default(false)
+  createdById  String
+  changeReason String
+  createdAt    DateTime @default(now())
+  textRules RuntimeTextRule[]
+}
+
+model LegalProfile {
+  id                String   @id @default(cuid())
+  name              String
+  version           Int
+  sourceId          String
+  locator           String
+  territory         String
+  procedure         String
+  effectiveFrom     DateTime
+  verifiedAt        DateTime
+  verifiedById      String
+  verificationNotes String
+  supersedesId      String?
+  mode              String   @default("CONFIRMED_DATES_ONLY")
+  createdAt         DateTime @default(now())
+
+  @@unique([name, version])
+}
+
+model WorkflowAction {
+  id        String   @id
+  caseId    String
+  key       String
+  type      String
+  status    String   @default("OPEN")
+  generated Boolean  @default(false)
+  payload   Json
+  revision  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, key])
+  @@index([caseId, status])
+}
+
+model QueueEvaluation {
+  id             String   @id @default(cuid())
+  caseId         String
+  policyVersion  Int
+  inputSnapshot  Json
+  policySnapshot Json
+  result         Json
+  outcomeHash    String
+  evaluatedAt    DateTime
+  triggeredBy    String
+  triggeredById  String?
+  case           Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, evaluatedAt(sort: Desc)])
+}
+
+model ActionNotification {
+  id         String   @id @default(cuid())
+  episodeKey String
+  userId     String
+  stage      String
+  createdAt  DateTime @default(now())
+
+  @@unique([episodeKey, userId, stage])
+}
+
+/// Canonical scalar record data; candidate lookup lives in application memory.
+model SystemRecord {
+  id String @id @default(cuid())
+  kind String
+  name String
+  jurisdiction String
+  reference String
+  eventDate String?
+  caseId String?
+  createdById String
+  revision Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  case Case? @relation(fields:[caseId],references:[id],onDelete:Restrict)
+  createdBy User @relation(fields:[createdById],references:[id],onDelete:Restrict)
+  outgoing IdentityDecision[] @relation("IdentityLeft")
+  incoming IdentityDecision[] @relation("IdentityRight")
+}
+/// Explicit reviewed links/splits; records are never silently merged or overwritten.
+model IdentityDecision {
+  id String @id @default(cuid())
+  leftId String
+  rightId String
+  disposition String
+  reason String
+  revision Int @default(0)
+  updatedAt DateTime @updatedAt
+  left SystemRecord @relation("IdentityLeft",fields:[leftId],references:[id],onDelete:Restrict)
+  right SystemRecord @relation("IdentityRight",fields:[rightId],references:[id],onDelete:Restrict)
+  @@unique([leftId,rightId])
+}
+/// A monotonically increasing generation coordinates index replicas across API processes.
+model SystemGeneration {
+  id String @id
+  revision Int @default(0)
+}
+model WorkflowGraph {
+  id String @id @default(cuid())
+  caseId String @unique
+  revision Int @default(0)
+  case Case @relation(fields:[caseId],references:[id],onDelete:Cascade)
+  nodes WorkflowNode[]
+  edges WorkflowEdge[]
+}
+model WorkflowNode {
+  graphId String
+  key String
+  title String
+  status String @default("OPEN")
+  completionEvidence String?
+  completedAt DateTime?
+  readyAt DateTime?
+  graph WorkflowGraph @relation(fields:[graphId],references:[id],onDelete:Cascade)
+  outgoing WorkflowEdge[] @relation("EdgeFrom")
+  incoming WorkflowEdge[] @relation("EdgeTo")
+  @@id([graphId,key])
+}
+model WorkflowEdge {
+  graphId String
+  fromKey String
+  toKey String
+  graph WorkflowGraph @relation(fields:[graphId],references:[id],onDelete:Cascade)
+  from WorkflowNode @relation("EdgeFrom",fields:[graphId,fromKey],references:[graphId,key],onDelete:Restrict)
+  to WorkflowNode @relation("EdgeTo",fields:[graphId,toKey],references:[graphId,key],onDelete:Restrict)
+  @@id([graphId,fromKey,toKey])
+}
+/// Human-reviewed Track 4 inputs. UNKNOWN remains distinct from FALSE.
+model CaseRuleEvidence {
+  caseId String @id
+  offenseSeverityIndex Float?
+  bailEligibility Boolean?
+  basis String
+  verifiedById String
+  verifiedAt DateTime
+  revision Int @default(0)
+  case Case @relation(fields:[caseId],references:[id],onDelete:Cascade)
+  verifiedBy User @relation(fields:[verifiedById],references:[id],onDelete:Restrict)
+}
+
+model RuntimeTextRule {
+  policyId String
+  ruleId String
+  position Int
+  condition String
+  urgency String?
+  component String?
+  value String?
+  policy QueuePolicy @relation(fields:[policyId],references:[id],onDelete:Restrict)
+  outgoing RuntimeRuleDependency[] @relation("RuleFrom")
+  incoming RuntimeRuleDependency[] @relation("RuleTo")
+  @@id([policyId,ruleId])
+}
+model RuntimeRuleDependency {
+  policyId String
+  fromRuleId String
+  toRuleId String
+  from RuntimeTextRule @relation("RuleFrom",fields:[policyId,fromRuleId],references:[policyId,ruleId],onDelete:Restrict)
+  to RuntimeTextRule @relation("RuleTo",fields:[policyId,toRuleId],references:[policyId,ruleId],onDelete:Restrict)
+  @@id([policyId,fromRuleId,toRuleId])
+}
+/// DB-trigger-protected append-only ledger, separate from display audit snapshots.
+model ActivityLedger {
+  sequence BigInt @id @default(autoincrement())
+  userId String?
+  timestamp DateTime @default(now())
+  actionType String
+  entityType String
+  entityId String?
+  oldValue Json
+  newValue Json
+  requestId String
+  previousHash String
+  hash String
+  user User? @relation(fields:[userId],references:[id],onDelete:Restrict)
+  @@map("Activity_Log")
 }

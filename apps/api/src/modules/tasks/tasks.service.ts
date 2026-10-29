@@ -1,3 +1,5 @@
+import { lockCaseWorkflow, validateWorkflowLinks } from "../../lib/workflowLinks.js";
+
 import type { Task } from "@prisma/client";
 import {
   AppError,
@@ -27,6 +29,8 @@ interface ActorContext {
 export function toTaskDto(t: Task): TaskDto {
   return {
     id: t.id,
+    hearingId: t.hearingId,
+    actionKey: t.actionKey,
     caseId: t.caseId,
     title: t.title,
     description: t.description,
@@ -88,7 +92,13 @@ export async function listTasks(
 
 export async function getMyTaskQueue(actor: ActorContext): Promise<TaskListItemDto[]> {
   const rows = await prisma.task.findMany({
-    where: { assignedToId: actor.id },
+    where: {
+      assignedToId: actor.id,
+      case: {
+        deletedAt: null,
+        ...(actor.role === "LEGAL_PROFESSIONAL" ? { assignedToId: actor.id } : {}),
+      },
+    },
     include: { case: { select: { caseRef: true } } },
     orderBy: { dueDate: "asc" },
   });
@@ -104,9 +114,14 @@ export async function createTask(
   const caseRow = await loadAccessibleCase(prisma, actor, caseId);
 
   const task = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, caseId);
+    await loadAccessibleCase(tx, actor, caseId);
+    await validateWorkflowLinks(tx, caseId, input.hearingId, input.actionKey);
     const t = await tx.task.create({
       data: {
         caseId,
+        hearingId: input.hearingId,
+        actionKey: input.actionKey,
         title: input.title,
         description: input.description,
         category: input.category,
@@ -171,6 +186,9 @@ export async function updateTask(
   }
 
   const updated = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, existing.caseId);
+    await loadAccessibleCase(tx, actor, existing.caseId);
+    await validateWorkflowLinks(tx, existing.caseId, input.hearingId, input.actionKey);
     const t = await tx.task.update({
       where: { id: taskId },
       data: {
@@ -217,6 +235,8 @@ export async function completeTask(
   }
 
   const updated = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, existing.caseId);
+    await loadAccessibleCase(tx, actor, existing.caseId);
     const t = await tx.task.update({
       where: { id: taskId },
       data: {
@@ -271,6 +291,8 @@ export async function reassignTask(
   }
 
   const updated = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, existing.caseId);
+    await loadAccessibleCase(tx, actor, existing.caseId);
     const t = await tx.task.update({
       where: { id: taskId },
       data: { assignedToId: input.assignedToId },

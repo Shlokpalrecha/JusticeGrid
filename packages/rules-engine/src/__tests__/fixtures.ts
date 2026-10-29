@@ -1,56 +1,121 @@
-import type { CaseEvaluationInput, RuleDefinition, RulesetConfig } from "../types.js";
-
-/**
- * Shared test-only builders. A fixed reference "today" (2026-09-20, in
- * Asia/Kolkata) is used throughout the suite so every test's dates are
- * expressed relative to a single, readable anchor.
- */
-export const TODAY = "2026-09-20";
-export const NOW = new Date("2026-09-20T04:00:00.000Z"); // 09:30 IST, same Kolkata calendar day
-
-export function baseInput(overrides: Partial<CaseEvaluationInput> = {}): CaseEvaluationInput {
+import type { WorkflowFacts, WorkflowInput, ActionInput } from "../workflowTypes.js";
+export const NOW = new Date("2026-10-29T06:30:00Z");
+export function facts(patch: Partial<WorkflowFacts> = {}): WorkflowFacts {
   return {
-    caseId: "case-1",
+    attendanceUnconfirmedHearingIds: [],
+    representation: "PRIVATE",
+    counselName: "Synthetic counsel",
+    counselAcceptedAt: "2026-01-01T00:00:00Z",
+    counselCommunicatedAt: null,
+    requestReceivedAt: null,
+    dlsaReceivedAt: null,
+    lawyerAppointedAt: null,
+    undecidedSince: null,
+    lastAidFollowupAt: null,
+    lastStatusCommunicatedAt: NOW.toISOString(),
+    interpreterNeeded: false,
+    communicationBlocked: false,
+    lastMeaningfulContactAt: null,
+    urgentReports: [],
+    procedure: "BNSS",
+    procedureBasis: "Synthetic applicability review",
+    specialLaw: null,
+    legalProfileId: "profile",
+    arrestAt: null,
+    firstRemandAt: "2026-01-01T00:00:00Z",
+    prisonAdmissionAt: null,
+    custodyIntervals: [],
+    excludedIntervals: [],
+    priorConvictions: "FALSE",
+    otherPendingCases: "FALSE",
+    multipleOffences: "FALSE",
+    currentChargesVerifiedAt: "2026-01-01T00:00:00Z",
+    punishmentBasis: "Review required",
+    investigationEvents: [],
+    confirmedReviews: [],
+    bailGrantedAt: null,
+    bailOrderCommunicatedAt: null,
+    bondsFurnishedAt: null,
+    releaseConfirmedAt: null,
+    nonReleaseReason: null,
+    dlsaInformedAt: null,
+    otherDetentionBarrier: "UNKNOWN",
+    bailApplications: [],
+    scheme: {
+      applicability: "UNKNOWN",
+      stage: "NONE",
+      anchorAt: null,
+      confirmedDueAt: null,
+      basis: null,
+      calendarConfirmed: false,
+      holidays: [],
+      completedAt: null,
+    },
+    utrc: {
+      categories: [],
+      verifiedBy: null,
+      meetingAt: null,
+      recommendationAt: null,
+      applicationAt: null,
+      orderAt: null,
+      outcomeAt: null,
+      notes: null,
+    },
+    firstEvidenceDate: null,
+    custodyThroughoutEvidence: "UNKNOWN",
+    recordedCourtException: null,
+    nextHearingState: "NOT_APPLICABLE",
+    nextPlannedReviewAt: null,
+    ...patch,
+  };
+}
+export function input(patch: Partial<WorkflowInput> = {}): WorkflowInput {
+  return {
+    caseId: "case-a",
     caseRef: "JG-2026-0001",
-    assignedToId: "user-1",
+    createdAt: "2026-10-01T00:00:00Z",
+    assignedToId: "owner",
     caseStatus: "TRIAL_ONGOING",
-    custodyType: "JUDICIAL",
-    custodyStartDate: "2026-01-01",
-    nextHearingDate: null,
-    lastHearingDate: null,
-    lastActivityAt: "2026-09-15",
-    bailStatus: "NOT_APPLIED",
-    bailAppliedDate: null,
-    consecutiveAdjournments: 0,
-    requiredFieldsPresent: {},
-    lastHearing: null,
+    isArchived: false,
+    custodyType: "NOT_IN_CUSTODY",
+    custodyStartDate: null,
+    courtName: "Synthetic court",
+    chargeCount: 1,
+    facts: facts(),
+    actions: [],
+    hearings: [],
     tasks: [],
     documents: [],
-    ...overrides,
+    ...patch,
   };
 }
-
-export function baseRule(overrides: Partial<RuleDefinition> = {}): RuleDefinition {
+export function action(patch: Partial<ActionInput> = {}): ActionInput {
   return {
-    id: "rule-1",
-    code: "R-TEST",
-    name: "Test rule",
-    category: "HEARING",
-    conditionType: "HEARING_WITHIN_DAYS",
-    params: { days: 3 },
-    weight: 4,
-    isEnabled: true,
-    displayTemplate: "Test rule triggered",
-    version: 1,
-    ...overrides,
-  };
-}
-
-export function baseConfig(overrides: Partial<RulesetConfig> = {}): RulesetConfig {
-  return {
-    version: 1,
-    highThreshold: 7,
-    mediumThreshold: 3,
-    ...overrides,
+    id: "manual-a",
+    key: "event:one",
+    type: "A16",
+    title: "Operational follow-up",
+    status: "OPEN",
+    activatedAt: "2026-10-01T00:00:00Z",
+    dueAt: "2026-11-10T00:00:00Z",
+    origin: "TEAM_TARGET",
+    confidence: "CONFIRMED",
+    sourceId: "TEAM",
+    locator: "Team policy",
+    evidence: "Synthetic review work",
+    ownerId: "owner",
+    critical: false,
+    forthwith: false,
+    retainedAfterClosure: false,
+    parentKey: null,
+    hearingId: null,
+    blocker: "NONE",
+    criticalDataMissing: false,
+    ordinaryDataMissing: false,
+    acknowledgedAt: null,
+    resolvedAt: null,
+    resolutionEvidence: null,
+    override: null,
+    ...patch,
   };
 }

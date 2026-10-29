@@ -1,3 +1,5 @@
+import { CaseActivityEditor } from "../components/CaseActivityEditor";
+import { WorkflowTab } from "../components/WorkflowTab";
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -24,6 +26,7 @@ import { formatDate, formatDateTime, titleCase } from "../lib/format";
 
 const TABS = [
   "Overview",
+  "Workflow",
   "Timeline",
   "Hearings",
   "Tasks",
@@ -80,6 +83,9 @@ export function CaseDetailPage() {
             {c.person.displayName} ({c.person.aliasCode}) · {c.courtName}
           </p>
         </div>
+        <Link to={`/systems?caseId=${id}`} className="text-sm underline">
+          Workflow dependencies and reviewed rule inputs
+        </Link>
         {can("RECORD_CASE_ACTIVITY") && (
           <Button
             variant="secondary"
@@ -108,7 +114,9 @@ export function CaseDetailPage() {
         ))}
       </div>
 
+      <CaseActivityEditor caseId={c.id} />
       {tab === "Overview" && <OverviewTab caseData={c} />}
+      {tab === "Workflow" && <WorkflowTab caseId={c.id} />}
       {tab === "Timeline" && <TimelineTab caseId={c.id} />}
       {tab === "Hearings" && <HearingsTab caseId={c.id} />}
       {tab === "Tasks" && <TasksTab caseId={c.id} />}
@@ -428,15 +436,18 @@ function PriorityTab({ caseId }: { caseId: string }) {
           </p>
           <div className="space-y-2">
             {history.slice(1).map((e) => (
-              <Card key={e.id}>
-                <CardContent className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">{formatDateTime(e.evaluatedAt)}</span>
-                  <span className="font-mono text-slate-700 dark:text-slate-300">
-                    {e.totalScore} pts
-                  </span>
-                  <PriorityBadge level={e.priorityLevel} />
-                </CardContent>
-              </Card>
+              <details
+                key={e.id}
+                className="rounded-lg border border-slate-200 p-3 dark:border-slate-800"
+              >
+                <summary className="cursor-pointer text-sm">
+                  {formatDateTime(e.evaluatedAt)} · {e.priorityLevel} · {e.supportScore}/20 support
+                  · Engine {e.engineVersion}
+                </summary>
+                <div className="mt-3">
+                  <ExplanationPanel evaluation={e} historical />
+                </div>
+              </details>
             ))}
           </div>
         </div>

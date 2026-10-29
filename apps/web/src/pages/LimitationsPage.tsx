@@ -29,14 +29,14 @@ export function LimitationsPage() {
         <CardContent className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
           <p>
             A deterministic <strong>workflow prioritization</strong> tool for legal-aid case
-            coordinators. It applies a fixed, human-authored, versioned set of rules —
-            "demonstration rules approved for testing" — to surface which cases have time-sensitive
-            administrative conditions (an approaching hearing, an overdue follow-up, a missing
-            document) that a human reviewer should look at soon.
+            coordinators. It orders unresolved actions by urgency, deadline, capped support and
+            waiting time. Sources, verified events and human-confirmed review dates explain the
+            ordering. The numerical weights and ranking windows are prototype team policy.
           </p>
           <p>
-            Every priority shown is accompanied by the exact reasons and arithmetic that produced it
-            — nothing is opaque, and nothing is a black box.
+            Each evaluation shows its source evidence, action deadline, urgency and support
+            components. Human reviewers remain responsible for the response and any legal
+            interpretation.
           </p>
         </CardContent>
       </Card>
@@ -55,7 +55,8 @@ export function LimitationsPage() {
             </li>
             <li>
               It uses no machine learning, statistical scoring, or probabilistic model of any kind.
-              Every score is a deterministic sum of fixed rule weights.
+              Support weights only break ties after urgency and deadline; they cannot override
+              protected work.
             </li>
             <li>
               It is not a "risk score" or "threat level" system — priority reflects
@@ -79,10 +80,11 @@ export function LimitationsPage() {
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
           <p>
-            A HIGH priority means: "this case has several open, time-sensitive workflow conditions
-            that a coordinator should review soon" — not "this person is dangerous" or "this case is
-            more important." A ROUTINE case may still be serious; it simply has no outstanding
-            administrative flags right now.
+            U0 means immediate attention to a reported urgent referral or a confirmed critical
+            legal/court action. U1 means time-sensitive review, U2 means follow-up and U3 means
+            scheduled work. A support total is not a judgment about a person. Unknown critical
+            information creates verification work. Acknowledgement keeps an action open until its
+            source records resolution.
           </p>
         </CardContent>
       </Card>
@@ -97,12 +99,13 @@ export function LimitationsPage() {
               The synthetic dataset is small and generated, not drawn from any real case records.
             </li>
             <li>
-              The default rule weights are illustrative, not calibrated against any real-world
-              outcome data.
+              The support weights are illustrative and have not been calibrated against real-world
+              outcomes.
             </li>
             <li>
-              Under concurrent writers, the audit hash chain's ordering guarantee has a documented
-              edge case (see the audit module's source comments).
+              Automatic statutory entitlement calculators are disabled. Protected review dates
+              require human confirmation and a reviewed applicability profile. Relevant legal and
+              local procedural developments still need professional validation.
             </li>
             <li>
               This prototype has not undergone a security review appropriate for handling real case

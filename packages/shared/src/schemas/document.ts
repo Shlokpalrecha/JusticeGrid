@@ -5,6 +5,8 @@ import { IdSchema, IsoDateTimeSchema } from "./common.js";
 export const DocumentRequirementSchema = z.object({
   id: IdSchema,
   caseId: IdSchema,
+  hearingId: IdSchema.nullable(),
+  actionKey: z.string().nullable(),
   documentType: DocumentTypeSchema,
   isMandatory: z.boolean(),
   status: DocumentStatusSchema,
@@ -22,7 +24,9 @@ export type DocumentRequirementDto = z.infer<typeof DocumentRequirementSchema>;
 export const DocumentCreateInputSchema = z
   .object({
     documentType: DocumentTypeSchema,
-    isMandatory: z.boolean().default(true),
+    hearingId: IdSchema.nullable().optional(),
+    actionKey: z.string().nullable().optional(),
+    isMandatory: z.boolean().default(false),
     sourceNote: z.string().optional(),
     remarks: z.string().optional(),
   })
@@ -32,6 +36,9 @@ export type DocumentCreateInput = z.infer<typeof DocumentCreateInputSchema>;
 export const DocumentUpdateInputSchema = z
   .object({
     status: DocumentStatusSchema.optional(),
+    isMandatory: z.boolean().optional(),
+    hearingId: IdSchema.nullable().optional(),
+    actionKey: z.string().nullable().optional(),
     sourceNote: z.string().optional(),
     remarks: z.string().optional(),
   })

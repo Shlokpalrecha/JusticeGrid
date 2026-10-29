@@ -55,7 +55,7 @@ export async function caseAgingHandler(req: Request, res: Response): Promise<voi
 }
 
 export async function ruleTriggerFrequencyHandler(req: Request, res: Response): Promise<void> {
-  ok(req, res, await reportsService.getRuleTriggerFrequency(requireUser(req)));
+  ok(req, res, await reportsService.getActionFrequency(requireUser(req)));
 }
 
 /**

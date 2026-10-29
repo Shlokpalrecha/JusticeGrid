@@ -17,7 +17,7 @@ export * from "./schemas/task.js";
 export * from "./schemas/document.js";
 export * from "./schemas/note.js";
 export * from "./schemas/assignmentHistory.js";
-export * from "./schemas/rule.js";
+export * from "./schemas/workflow.js";
 export * from "./schemas/priority.js";
 export * from "./schemas/audit.js";
 export * from "./schemas/notification.js";

@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, Check } from "lucide-react";
@@ -9,6 +10,7 @@ import { formatDistanceStrict } from "date-fns";
 export function NotificationsBell() {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data } = useQuery({
     queryKey: ["notifications", "bell"],
@@ -70,7 +72,18 @@ export function NotificationsBell() {
               {items.map((n) => (
                 <button
                   key={n.id}
-                  onClick={() => !n.isRead && void markRead(n.id)}
+                  onClick={() => {
+                    if (!n.isRead) void markRead(n.id);
+                    if (n.relatedEntityType === "Case" && n.relatedEntityId) {
+                      navigate("/cases/" + n.relatedEntityId);
+                      setOpen(false);
+                    } else if (["Queue", "WorkflowAction"].includes(n.relatedEntityType ?? "")) {
+                      navigate(
+                        n.relatedEntityType === "Queue" ? "/priority?lane=OLDEST" : "/priority",
+                      );
+                      setOpen(false);
+                    }
+                  }}
                   className={cn(
                     "flex w-full items-start gap-2 border-b border-slate-50 px-3 py-2.5 text-left text-xs last:border-0 dark:border-slate-800/50",
                     n.isRead ? "opacity-60" : "bg-slate-50 dark:bg-slate-800/50",

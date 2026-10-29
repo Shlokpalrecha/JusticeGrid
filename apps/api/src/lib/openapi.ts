@@ -1,4 +1,14 @@
 import {
+  IdentityInput,
+  IngestInput,
+  RecordEditInput,
+  DecisionInput,
+  GraphInput,
+  NodeTransition,
+  RuleEvidence,
+  ExpressionInput,
+} from "../modules/systems/systems.schemas.js";
+import {
   extendZodWithOpenApi,
   OpenAPIRegistry,
   OpenApiGeneratorV31,
@@ -11,6 +21,17 @@ import { z } from "zod";
 // on a package we never import from ourselves.
 type OpenApiDocument = ReturnType<OpenApiGeneratorV31["generateDocument"]>;
 import {
+  WorkflowFactsSchema,
+  WorkflowUpdateSchema,
+  ActionCreateSchema,
+  ActionTransitionSchema,
+  ActionOverrideSchema,
+  ActionAssignSchema,
+  ActionResultSchema,
+  PolicySchema,
+  PolicyPublishSchema,
+  PolicySimulateSchema,
+  ProfileCreateSchema,
   ApiErrorEnvelopeSchema,
   apiSuccessSchema,
   AuditChainVerificationSchema,
@@ -53,16 +74,7 @@ import {
   PriorityQueueItemSchema,
   ReportExportParamSchema,
   ReportExportQuerySchema,
-  RuleCreateInputSchema,
-  RuleSchema,
-  RuleSimulateInputSchema,
-  RuleSimulateResponseSchema,
-  RulesetConfigCreateInputSchema,
-  RulesetConfigSchema,
-  RuleToggleInputSchema,
-  RuleTriggerFrequencyRowSchema,
-  RuleUpdateInputSchema,
-  RuleVersionSchema,
+  ActionFrequencyRowSchema,
   SearchQuerySchema,
   SearchResponseSchema,
   TaskCompleteInputSchema,
@@ -118,6 +130,7 @@ const commonErrors = {
   401: errorResponse,
   403: errorResponse,
   404: errorResponse,
+  409: errorResponse,
 };
 
 const IdPathParam = IdParamSchema;
@@ -126,7 +139,6 @@ const CaseIdParamNamed = z.object({ caseId: z.string() }).strict();
 const HearingIdPathParam = z.object({ id: z.string() }).strict();
 const TaskIdPathParam = z.object({ id: z.string() }).strict();
 const DocumentIdPathParam = z.object({ id: z.string() }).strict();
-const RuleIdPathParam = z.object({ id: z.string() }).strict();
 
 // ── Meta ────────────────────────────────────────────────────────────────
 registry.registerPath({
@@ -249,7 +261,7 @@ registry.registerPath({
   summary: "Create a case",
   security: auth,
   request: { body: { content: { "application/json": { schema: CaseCreateInputSchema } } } },
-  responses: { 201: ok(CaseSchema), 409: errorResponse, ...commonErrors },
+  responses: { 201: ok(CaseSchema), ...commonErrors },
 });
 registry.registerPath({
   method: "get",
@@ -536,96 +548,6 @@ registry.registerPath({
   responses: { 200: ok(DocumentRequirementSchema), ...commonErrors },
 });
 
-// ── Rules ───────────────────────────────────────────────────────────────
-registry.registerPath({
-  method: "get",
-  path: "/api/v1/rules",
-  tags: ["Rules"],
-  summary: "List every rule in the ruleset (all roles read)",
-  security: auth,
-  responses: { 200: ok(z.array(RuleSchema)), ...commonErrors },
-});
-registry.registerPath({
-  method: "post",
-  path: "/api/v1/rules",
-  tags: ["Rules"],
-  summary: "Create a rule (ADMIN only)",
-  security: auth,
-  request: { body: { content: { "application/json": { schema: RuleCreateInputSchema } } } },
-  responses: { 201: ok(RuleSchema), ...commonErrors },
-});
-registry.registerPath({
-  method: "patch",
-  path: "/api/v1/rules/{id}",
-  tags: ["Rules"],
-  summary: "Update a rule — also triggers a full recompute (ADMIN only)",
-  security: auth,
-  request: {
-    params: RuleIdPathParam,
-    body: { content: { "application/json": { schema: RuleUpdateInputSchema } } },
-  },
-  responses: { 200: ok(RuleSchema), ...commonErrors },
-});
-registry.registerPath({
-  method: "post",
-  path: "/api/v1/rules/{id}/toggle",
-  tags: ["Rules"],
-  summary: "Enable/disable a rule — also triggers a full recompute (ADMIN only)",
-  security: auth,
-  request: {
-    params: RuleIdPathParam,
-    body: { content: { "application/json": { schema: RuleToggleInputSchema } } },
-  },
-  responses: { 200: ok(RuleSchema), ...commonErrors },
-});
-registry.registerPath({
-  method: "get",
-  path: "/api/v1/rules/{id}/versions",
-  tags: ["Rules"],
-  summary: "A rule's append-only change history",
-  security: auth,
-  request: { params: RuleIdPathParam },
-  responses: { 200: ok(z.array(RuleVersionSchema)), ...commonErrors },
-});
-registry.registerPath({
-  method: "get",
-  path: "/api/v1/rules/config",
-  tags: ["Rules"],
-  summary: "The currently active ruleset configuration (thresholds)",
-  security: auth,
-  responses: { 200: ok(RulesetConfigSchema), ...commonErrors },
-});
-registry.registerPath({
-  method: "put",
-  path: "/api/v1/rules/config",
-  tags: ["Rules"],
-  summary:
-    "Activate a new ruleset configuration version — also triggers a full recompute (ADMIN only)",
-  security: auth,
-  request: {
-    body: { content: { "application/json": { schema: RulesetConfigCreateInputSchema } } },
-  },
-  responses: { 200: ok(RulesetConfigSchema), ...commonErrors },
-});
-registry.registerPath({
-  method: "post",
-  path: "/api/v1/rules/simulate",
-  tags: ["Rules"],
-  summary:
-    "Preview a candidate ruleset's effect on the queue, without persisting anything (ADMIN only)",
-  security: auth,
-  request: { body: { content: { "application/json": { schema: RuleSimulateInputSchema } } } },
-  responses: { 200: ok(RuleSimulateResponseSchema), ...commonErrors },
-});
-registry.registerPath({
-  method: "post",
-  path: "/api/v1/rules/recompute-all",
-  tags: ["Rules"],
-  summary: "Recompute every case's priority under the current ruleset (ADMIN only)",
-  security: auth,
-  responses: { 200: ok(z.object({ recomputedCount: z.number().int() })), ...commonErrors },
-});
-
 // ── Priority ────────────────────────────────────────────────────────────
 registry.registerPath({
   method: "get",
@@ -765,11 +687,11 @@ registry.registerPath({
 });
 registry.registerPath({
   method: "get",
-  path: "/api/v1/reports/rule-trigger-frequency",
+  path: "/api/v1/reports/action-frequency",
   tags: ["Reports"],
-  summary: "How many cases' current evaluation triggers each rule",
+  summary: "How many cases have unresolved work in each action category",
   security: auth,
-  responses: { 200: ok(z.array(RuleTriggerFrequencyRowSchema)), ...commonErrors },
+  responses: { 200: ok(z.array(ActionFrequencyRowSchema)), ...commonErrors },
 });
 registry.registerPath({
   method: "get",
@@ -825,6 +747,288 @@ registry.registerPath({
   security: auth,
   responses: { 200: ok(z.object({ updatedCount: z.number().int() })), ...commonErrors },
 });
+
+// Action queue v2. These are the sole active policy/workflow routes.
+const workflowCaseParams = z.object({ caseId: z.string() });
+const workflowActionParams = workflowCaseParams.extend({ id: z.string() });
+const actionEpisodeSchema = ActionResultSchema.omit({
+  urgency: true,
+  originalUrgency: true,
+  orderingDeadline: true,
+  supportScore: true,
+  components: true,
+  explanation: true,
+  warnings: true,
+  suppressedDuplicates: true,
+}).extend({ revision: z.number().int(), generated: z.boolean() });
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/workflows/case/{caseId}",
+  tags: ["Workflow"],
+  summary: "Source facts and action episode history",
+  security: auth,
+  request: { params: workflowCaseParams },
+  responses: {
+    200: ok(
+      z.object({
+        facts: WorkflowFactsSchema,
+        revision: z.number().int(),
+        error: z.string().nullable(),
+        actions: z.array(actionEpisodeSchema),
+      }),
+    ),
+    ...commonErrors,
+  },
+});
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/workflows/owners",
+  tags: ["Workflow"],
+  summary: "Active operational owners",
+  security: auth,
+  responses: {
+    200: ok(z.array(z.object({ id: z.string(), fullName: z.string(), role: z.string() }))),
+    ...commonErrors,
+  },
+});
+for (const route of [
+  {
+    method: "put" as const,
+    path: "/api/v1/workflows/case/{caseId}",
+    schema: WorkflowUpdateSchema,
+    params: workflowCaseParams,
+    summary: "Record source evidence with optimistic revision check",
+  },
+  {
+    method: "post" as const,
+    path: "/api/v1/workflows/case/{caseId}/actions",
+    schema: ActionCreateSchema,
+    params: workflowCaseParams,
+    summary: "Create one human-confirmed action occurrence",
+  },
+  {
+    method: "patch" as const,
+    path: "/api/v1/workflows/case/{caseId}/actions/{id}",
+    schema: ActionTransitionSchema,
+    params: workflowActionParams,
+    summary: "Acknowledge, block or close work with evidence",
+  },
+  {
+    method: "post" as const,
+    path: "/api/v1/workflows/case/{caseId}/actions/{id}/override",
+    schema: ActionOverrideSchema,
+    params: workflowActionParams,
+    summary: "Time-limited coordinator ordering override",
+  },
+  {
+    method: "post" as const,
+    path: "/api/v1/workflows/case/{caseId}/actions/{id}/assign",
+    schema: ActionAssignSchema,
+    params: workflowActionParams,
+    summary: "Assign accountable action owner without resetting waiting time",
+  },
+])
+  registry.registerPath({
+    method: route.method,
+    path: route.path,
+    tags: ["Workflow"],
+    summary: route.summary,
+    security: auth,
+    request: {
+      params: route.params,
+      body: { content: { "application/json": { schema: route.schema } } },
+    },
+    responses: {
+      [route.path.endsWith("/actions") ? 201 : 200]: ok(
+        z.object({ id: z.string().optional(), revision: z.number().int().optional() }),
+      ),
+      ...commonErrors,
+    },
+  });
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/queue-policy",
+  tags: ["Queue policy"],
+  summary: "Active policy, immutable history, profiles and source/action catalog",
+  security: auth,
+  responses: {
+    200: ok(
+      z.object({
+        active: z.object({ version: z.number().int(), config: PolicySchema }).passthrough(),
+        history: z.array(z.object({ version: z.number().int() }).passthrough()),
+        profiles: z.array(ProfileCreateSchema.extend({ id: z.string() })),
+        sources: z.record(z.object({ title: z.string(), url: z.string().nullable() })),
+        catalog: z.array(z.tuple([z.string(), z.string(), z.string()])),
+        calculatorMode: z.literal("CONFIRMED_DATES_ONLY"),
+      }),
+    ),
+    ...commonErrors,
+  },
+});
+for (const route of [
+  {
+    path: "simulate",
+    schema: PolicySimulateSchema,
+    summary: "Read-only before/after policy simulation at a single clock instant",
+  },
+  {
+    path: "publish",
+    schema: PolicyPublishSchema,
+    summary: "Atomically publish policy and re-evaluate all cases",
+  },
+  {
+    path: "rollback/{version}",
+    schema: z.object({
+      expectedVersion: z.number().int().positive(),
+      changeReason: z.string().min(1),
+    }),
+    summary: "Publish historical policy configuration as a new version",
+  },
+  {
+    path: "profiles",
+    schema: ProfileCreateSchema,
+    summary: "Record immutable source applicability profile; calculators stay disabled",
+  },
+])
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/queue-policy/" + route.path,
+    tags: ["Queue policy"],
+    summary: route.summary,
+    security: auth,
+    request: {
+      ...(route.path.includes("{version}")
+        ? { params: z.object({ version: z.coerce.number().int().positive() }) }
+        : {}),
+      body: { content: { "application/json": { schema: route.schema } } },
+    },
+    responses: { [route.path === "profiles" ? 201 : 200]: ok(z.unknown()), ...commonErrors },
+  });
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/priority/evaluations/{id}/replay",
+  tags: ["Priority"],
+  summary: "Replay stored facts, policy and time without writes",
+  security: auth,
+  request: { params: IdPathParam },
+  responses: {
+    200: ok(
+      z.object({
+        matches: z.boolean(),
+        result: PriorityEvaluationSchema.omit({
+          id: true,
+          stale: true,
+          error: true,
+          triggeredBy: true,
+          triggeredById: true,
+        }),
+      }),
+    ),
+    ...commonErrors,
+  },
+});
+
+// Track 4 systems endpoints share the exact runtime validators used by the routes.
+for (const route of [
+  { method: "get", path: "status", summary: "Inspect active heap and typed runtime rule fields" },
+  { method: "get", path: "records", summary: "List recent identity records in the caller's scope" },
+  {
+    method: "post",
+    path: "identity/match",
+    body: IdentityInput,
+    summary: "Match using the bounded in-memory phonetic inverted index",
+  },
+  {
+    method: "post",
+    path: "identity/ingest",
+    body: IngestInput,
+    summary: "Stream up to 100 records through the active index",
+    created: true,
+  },
+  {
+    method: "put",
+    path: "records/{id}",
+    body: RecordEditInput,
+    params: IdPathParam,
+    summary: "Correct an identity record with optimistic concurrency",
+  },
+  {
+    method: "post",
+    path: "identity/decisions",
+    body: DecisionInput,
+    summary: "Review a link, distinct record or split with retained history",
+  },
+  {
+    method: "get",
+    path: "graphs/case/{caseId}",
+    params: CaseIdParamNamed,
+    summary: "Read graph, topological layers and ready nodes",
+  },
+  {
+    method: "put",
+    path: "graphs/case/{caseId}",
+    params: CaseIdParamNamed,
+    body: GraphInput,
+    summary: "Validate DAG and atomically replace configuration",
+  },
+  {
+    method: "patch",
+    path: "graphs/case/{caseId}/nodes/{key}",
+    params: z.object({ caseId: z.string(), key: z.string() }),
+    body: NodeTransition,
+    summary: "Complete or reopen a node with all-parent gating and revision checks",
+  },
+  {
+    method: "get",
+    path: "rule-evidence/case/{caseId}",
+    params: CaseIdParamNamed,
+    summary: "Read human-confirmed Track 4 rule inputs",
+  },
+  {
+    method: "put",
+    path: "rule-evidence/case/{caseId}",
+    params: CaseIdParamNamed,
+    body: RuleEvidence,
+    summary: "Record reviewed rule inputs with revision checks",
+  },
+  {
+    method: "post",
+    path: "rules/compile",
+    body: ExpressionInput,
+    summary: "Compile typed raw text into AST and evaluate without JavaScript execution",
+  },
+  {
+    method: "get",
+    path: "ledger",
+    summary: "Read the latest 100 immutable ledger entries",
+    query: z.object({ before: z.string().regex(/^\d+$/).optional() }),
+  },
+  {
+    method: "get",
+    path: "ledger/verify",
+    summary: "Stream and verify the complete Activity_Log hash chain",
+  },
+] as const) {
+  registry.registerPath({
+    method: route.method,
+    path: "/api/v1/systems/" + route.path,
+    tags: ["Systems"],
+    summary: route.summary,
+    security: auth,
+    request: {
+      ...("params" in route ? { params: route.params } : {}),
+      ...("query" in route ? { query: route.query } : {}),
+      ...("body" in route
+        ? { body: { content: { "application/json": { schema: route.body! } } } }
+        : {}),
+    },
+    responses: {
+      ["created" in route ? 201 : 200]: ok(z.unknown()),
+      ...commonErrors,
+      422: errorResponse,
+    },
+  });
+}
 
 export function buildOpenApiDocument(): OpenApiDocument {
   const generator = new OpenApiGeneratorV31(registry.definitions);

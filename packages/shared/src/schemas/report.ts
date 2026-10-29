@@ -79,16 +79,16 @@ export const CaseAgingRowSchema = z.object({
 });
 export type CaseAgingRow = z.infer<typeof CaseAgingRowSchema>;
 
-/** `GET /reports/rule-trigger-frequency` (spec §7): how many cases'
+/** `GET /reports/action-frequency` (spec §7): how many cases'
  * CURRENT (latest) evaluation triggers each rule — an at-a-glance view
  * of which rules are actually driving today's queue, not a historical
  * tally across every past recompute. */
-export const RuleTriggerFrequencyRowSchema = z.object({
-  ruleCode: z.string(),
-  ruleName: z.string(),
+export const ActionFrequencyRowSchema = z.object({
+  actionType: z.string(),
+  actionName: z.string(),
   triggerCount: z.number().int(),
 });
-export type RuleTriggerFrequencyRow = z.infer<typeof RuleTriggerFrequencyRowSchema>;
+export type ActionFrequencyRow = z.infer<typeof ActionFrequencyRowSchema>;
 
 export const REPORT_NAMES = [
   "pending-by-user",
@@ -97,7 +97,7 @@ export const REPORT_NAMES = [
   "priority-distribution",
   "completed",
   "case-aging",
-  "rule-trigger-frequency",
+  "action-frequency",
 ] as const;
 export const ReportNameSchema = z.enum(REPORT_NAMES);
 export type ReportName = z.infer<typeof ReportNameSchema>;

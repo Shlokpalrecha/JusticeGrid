@@ -35,13 +35,33 @@ export function toPersonDto(person: Person): PersonDto {
   };
 }
 
-export async function listPersons(): Promise<PersonDto[]> {
-  const persons = await prisma.person.findMany({ orderBy: { aliasCode: "asc" } });
+export async function listPersons(actor?: { id: string; role: string }): Promise<PersonDto[]> {
+  const persons = await prisma.person.findMany({
+    where:
+      actor?.role === "LEGAL_PROFESSIONAL"
+        ? {
+            OR: [
+              { cases: { some: { assignedToId: actor.id, deletedAt: null } } },
+              { cases: { none: { deletedAt: null } } },
+            ],
+          }
+        : {},
+    orderBy: { aliasCode: "asc" },
+  });
   return persons.map(toPersonDto);
 }
 
-export async function getPerson(id: string): Promise<PersonDto> {
+export async function getPerson(
+  id: string,
+  actor?: { id: string; role: string },
+): Promise<PersonDto> {
   const person = await prisma.person.findUnique({ where: { id } });
+  if (
+    actor?.role === "LEGAL_PROFESSIONAL" &&
+    (await prisma.case.count({ where: { personId: id, deletedAt: null } })) &&
+    !(await prisma.case.count({ where: { personId: id, assignedToId: actor.id, deletedAt: null } }))
+  )
+    throw new AppError("FORBIDDEN", "Person is outside your assigned cases.");
   if (!person) throw new AppError("NOT_FOUND", "Person not found.");
   return toPersonDto(person);
 }

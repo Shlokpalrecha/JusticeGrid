@@ -1,5 +1,3 @@
-import type { CaseEvaluationInput, RuleDefinition, RulesetConfig } from "./types.js";
-
 /**
  * Pure-TypeScript SHA-256 (FIPS 180-4), written from the algorithm rather
  * than using `node:crypto` — this package imports nothing (spec §4/§6.2).
@@ -127,21 +125,4 @@ function sortKeysDeep(value: unknown): unknown {
     return sorted;
   }
   return value;
-}
-
-/**
- * `inputHash = sha256(canonicalJson(input) + canonicalJson(enabledRulesSortedByCode) + canonicalJson(config))`
- * (spec §6.2). Callers must pass `enabledRules` already filtered to
- * enabled rules and sorted by `code` — evaluate.ts does this once and
- * reuses the same list for both condition evaluation and hashing, so the
- * two can never disagree about which rules were "in effect".
- */
-export function computeInputHash(
-  input: CaseEvaluationInput,
-  enabledRulesSortedByCode: RuleDefinition[],
-  config: RulesetConfig,
-): string {
-  const payload =
-    canonicalJson(input) + canonicalJson(enabledRulesSortedByCode) + canonicalJson(config);
-  return sha256Hex(payload);
 }

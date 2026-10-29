@@ -1,3 +1,4 @@
+import { ExpressionError,GraphError,HeapConflict } from "@justicegrid/rules-engine";
 import type { NextFunction, Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
@@ -25,6 +26,9 @@ import { getRequestId } from "./requestId.js";
 // Express to recognize this as error-handling middleware.
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
   const requestId = getRequestId(req);
+  if(err instanceof ExpressionError)err=new AppError("RULE_PARSE_ERROR",err.message);
+  if(err instanceof GraphError)err=new AppError(err.code==="CYCLE_DETECTED"?"CYCLE_DETECTED":"VALIDATION_ERROR",err.message);
+  if(err instanceof HeapConflict)err=new AppError("CONFLICT",err.message);
 
   if (err instanceof AppError) {
     if (err.code === "INTERNAL_ERROR") {
@@ -35,6 +39,20 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
       error: { code: err.code, message: err.message, details: err.details, requestId },
     };
     res.status(err.httpStatus).json(response);
+    return;
+  }
+
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2034") {
+    res
+      .status(409)
+      .json({
+        success: false,
+        error: {
+          code: "CONFLICT",
+          message: "Concurrent workflow or policy change. Reload and retry.",
+          requestId,
+        },
+      });
     return;
   }
 

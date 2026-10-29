@@ -1,3 +1,5 @@
+import { lockCaseWorkflow, validateWorkflowLinks } from "../../lib/workflowLinks.js";
+
 import type { DocumentRequirement } from "@prisma/client";
 import {
   AppError,
@@ -20,20 +22,9 @@ interface ActorContext {
   role: "ADMIN" | "LEGAL_PROFESSIONAL" | "AUDITOR";
 }
 
-/**
- * Default mandatory-document checklist applied by `apply-checklist`
- * (spec §7). These are demonstration defaults for the prototype — a
- * reasonable baseline checklist, not an authoritative legal requirement
- * list (spec §1.9's "demonstration rules" framing applies here too, even
- * though this isn't a scoring Rule row). FIR/charge-sheet/remand/
- * identity/vakalatnama/custody-certificate are treated as always
- * mandatory; bail- and evidence-related documents are seeded as
- * optional, since they only become relevant depending on how the case
- * proceeds (bail applied, medical need, etc.) — a reviewer marks them
- * mandatory manually via `POST /cases/:id/documents` if the case needs
- * them.
- */
-const DEFAULT_MANDATORY_DOCUMENT_TYPES = [
+/** Optional document templates. A reviewer must record relevance and link a
+ * requirement to the action/hearing that needs it; none are universal mandates. */
+const BASE_DOCUMENT_TEMPLATES = [
   "FIR_COPY",
   "CHARGE_SHEET",
   "REMAND_ORDER",
@@ -54,6 +45,8 @@ const DEFAULT_OPTIONAL_DOCUMENT_TYPES = [
 export function toDocumentDto(d: DocumentRequirement): DocumentRequirementDto {
   return {
     id: d.id,
+    hearingId: d.hearingId,
+    actionKey: d.actionKey,
     caseId: d.caseId,
     documentType: d.documentType,
     isMandatory: d.isMandatory,
@@ -100,9 +93,14 @@ export async function addDocument(
   }
 
   const doc = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, caseId);
+    await loadAccessibleCase(tx, actor, caseId);
+    await validateWorkflowLinks(tx, caseId, input.hearingId, input.actionKey);
     const d = await tx.documentRequirement.create({
       data: {
         caseId,
+        hearingId: input.hearingId,
+        actionKey: input.actionKey,
         documentType: input.documentType,
         isMandatory: input.isMandatory,
         sourceNote: input.sourceNote,
@@ -137,14 +135,23 @@ export async function updateDocument(
 
   const now = new Date();
   const updated = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, existing.caseId);
+    await loadAccessibleCase(tx, actor, existing.caseId);
+    await validateWorkflowLinks(tx, existing.caseId, input.hearingId, input.actionKey);
     const d = await tx.documentRequirement.update({
       where: { id: documentId },
       data: {
         status: input.status,
+        isMandatory: input.isMandatory,
+        hearingId: input.hearingId,
+        actionKey: input.actionKey,
         sourceNote: input.sourceNote,
         remarks: input.remarks,
         requestedAt: input.status === "REQUESTED" && !existing.requestedAt ? now : undefined,
-        receivedAt: input.status === "RECEIVED" && !existing.receivedAt ? now : undefined,
+        receivedAt: input.status === "RECEIVED" && existing.status !== "RECEIVED" ? now : undefined,
+        ...(input.status && input.status !== "VERIFIED"
+          ? { verifiedAt: null, verifiedById: null }
+          : {}),
       },
     });
     await touchCaseActivity(tx, existing.caseId);
@@ -199,6 +206,8 @@ export async function verifyDocument(
   }
 
   const updated = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, existing.caseId);
+    await loadAccessibleCase(tx, actor, existing.caseId);
     const d = await tx.documentRequirement.update({
       where: { id: documentId },
       data: {
@@ -229,7 +238,7 @@ export async function verifyDocument(
 }
 
 /** `POST /cases/:id/documents/apply-checklist` (spec §7): seeds the
- * default mandatory checklist, skipping any documentType already present
+ * optional document templates, skipping any documentType already present
  * for this case — idempotent, safe to call more than once. */
 export async function applyChecklist(
   actor: ActorContext,
@@ -248,12 +257,10 @@ export async function applyChecklist(
   );
 
   const toCreate = [
-    ...DEFAULT_MANDATORY_DOCUMENT_TYPES.filter((t) => !existingTypes.has(t)).map(
-      (documentType) => ({
-        documentType,
-        isMandatory: true,
-      }),
-    ),
+    ...BASE_DOCUMENT_TEMPLATES.filter((t) => !existingTypes.has(t)).map((documentType) => ({
+      documentType,
+      isMandatory: false,
+    })),
     ...DEFAULT_OPTIONAL_DOCUMENT_TYPES.filter((t) => !existingTypes.has(t)).map((documentType) => ({
       documentType,
       isMandatory: false,
@@ -266,6 +273,8 @@ export async function applyChecklist(
   }
 
   await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, caseId);
+    await loadAccessibleCase(tx, actor, caseId);
     const rows: DocumentRequirement[] = [];
     for (const item of toCreate) {
       rows.push(await tx.documentRequirement.create({ data: { caseId, ...item } }));

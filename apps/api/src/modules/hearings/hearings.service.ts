@@ -1,3 +1,4 @@
+import { lockCaseWorkflow } from "../../lib/workflowLinks.js";
 import type { Hearing } from "@prisma/client";
 import {
   AppError,
@@ -11,7 +12,6 @@ import type { AuditRequestContext } from "../../lib/audit.js";
 import { writeAuditEntry } from "../../lib/audit.js";
 import { hasUnscopedCaseVisibility, loadAccessibleCase } from "../../lib/caseAccess.js";
 import { touchCaseActivity } from "../../lib/caseActivity.js";
-import { recomputeCaseHearingDates } from "../../lib/caseHearingDates.js";
 import { evaluateAndPersistCase } from "../../lib/priorityEvaluation.js";
 import { prisma } from "../../lib/prisma.js";
 
@@ -27,6 +27,8 @@ export function toHearingDto(h: Hearing): HearingDto {
     caseId: h.caseId,
     scheduledDate: h.scheduledDate.toISOString(),
     actualDate: h.actualDate?.toISOString() ?? null,
+    orderExpected: h.orderExpected,
+    orderReceivedAt: h.orderReceivedAt?.toISOString() ?? null,
     hearingType: h.hearingType,
     purpose: h.purpose,
     outcome: h.outcome,
@@ -55,6 +57,19 @@ function validateScheduledDate(scheduledDateIso: string, custodyStartDate: Date 
   }
 }
 
+function validateCompletedEvents(
+  actualAt: string | null | undefined,
+  receivedAt: string | null | undefined,
+): void {
+  if ([actualAt, receivedAt].some((at) => at && new Date(at) > new Date()))
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "Completed hearing/order events cannot be in the future.",
+    );
+  if (actualAt && receivedAt && new Date(receivedAt) < new Date(actualAt))
+    throw new AppError("VALIDATION_ERROR", "Order receipt cannot precede the actual hearing.");
+}
+
 export async function listHearingsForCase(
   actor: ActorContext,
   caseId: string,
@@ -75,12 +90,18 @@ export async function createHearing(
 ): Promise<HearingDto> {
   const caseRow = await loadAccessibleCase(prisma, actor, caseId);
   validateScheduledDate(input.scheduledDate, caseRow.custodyStartDate);
+  validateCompletedEvents(input.actualDate, input.orderReceivedAt);
 
   const hearing = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, caseId);
+    await loadAccessibleCase(tx, actor, caseId);
     const h = await tx.hearing.create({
       data: {
         caseId,
         scheduledDate: new Date(input.scheduledDate),
+        actualDate: input.actualDate ? new Date(input.actualDate) : null,
+        orderExpected: input.orderExpected,
+        orderReceivedAt: input.orderReceivedAt ? new Date(input.orderReceivedAt) : null,
         hearingType: input.hearingType,
         purpose: input.purpose,
         outcome: input.outcome,
@@ -91,7 +112,6 @@ export async function createHearing(
         recordedById: actor.id,
       },
     });
-    await recomputeCaseHearingDates(tx, caseId);
     await touchCaseActivity(tx, caseId);
     await writeAuditEntry(tx, actor, request, {
       action: "CREATE",
@@ -121,17 +141,40 @@ export async function updateHearing(
   if (input.scheduledDate) {
     validateScheduledDate(input.scheduledDate, caseRow.custodyStartDate);
   }
+  validateCompletedEvents(
+    input.actualDate === undefined ? existing.actualDate?.toISOString() : input.actualDate,
+    input.orderReceivedAt === undefined
+      ? existing.orderReceivedAt?.toISOString()
+      : input.orderReceivedAt,
+  );
 
   const updated = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, existing.caseId);
+    await loadAccessibleCase(tx, actor, existing.caseId);
     const h = await tx.hearing.update({
       where: { id: hearingId },
       data: {
         ...input,
         scheduledDate: input.scheduledDate ? new Date(input.scheduledDate) : undefined,
+        actualDate:
+          input.actualDate === null
+            ? null
+            : input.actualDate
+              ? new Date(input.actualDate)
+              : undefined,
+        orderReceivedAt:
+          input.orderReceivedAt === null
+            ? null
+            : input.orderReceivedAt
+              ? new Date(input.orderReceivedAt)
+              : undefined,
+        ...(input.orderReceivedAt !== undefined &&
+        input.orderReceivedAt !== existing.orderReceivedAt?.toISOString()
+          ? { orderReviewed: false, orderReviewedAt: null, orderReviewedById: null }
+          : {}),
         nextHearingDate: input.nextHearingDate ? new Date(input.nextHearingDate) : undefined,
       },
     });
-    await recomputeCaseHearingDates(tx, existing.caseId);
     await touchCaseActivity(tx, existing.caseId);
     await writeAuditEntry(tx, actor, request, {
       action: "UPDATE",
@@ -161,8 +204,15 @@ export async function markOrderReviewed(
   const existing = await prisma.hearing.findUnique({ where: { id: hearingId } });
   if (!existing) throw new AppError("NOT_FOUND", "Hearing not found.");
   const caseRow = await loadAccessibleCase(prisma, actor, existing.caseId);
+  if (!existing.orderReceivedAt)
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "Record actual order receipt before marking it reviewed.",
+    );
 
   const updated = await prisma.$transaction(async (tx) => {
+    await lockCaseWorkflow(tx, existing.caseId);
+    await loadAccessibleCase(tx, actor, existing.caseId);
     const h = await tx.hearing.update({
       where: { id: hearingId },
       data: {

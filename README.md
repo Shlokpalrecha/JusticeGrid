@@ -1,109 +1,142 @@
 # JusticeGrid
 
-> **Prototype — synthetic data only.** Workflow prioritization is a review aid, not a legal or
-> judicial decision. All actions require human review.
+JusticeGrid is a synthetic legal-aid workflow prototype. It helps a team follow up
+requests, counsel access, hearings, documents, bail orders and actual release.
+The queue orders work for human review; it does not decide entitlement, bail or release.
 
-JusticeGrid is an academic, end-to-end prototype of a **legal-aid workflow and explainable
-prioritization system**. An authorized legal-aid team manages its own last-mile follow-up work on
-assigned undertrial cases — checking orders, preparing documents, contacting lawyers, tracking
-hearings and tasks. JusticeGrid stores that operational information, applies a deterministic,
-configurable rule engine to it, and produces an **explainable review queue**: every priority is
-shown with the exact reasons that produced it. A human decides every action.
+The active engine is **v3**, retaining the researched U0–U3 workflow model: U0 immediate, U1 time-sensitive, U2 follow-up and U3 scheduled.
+The previous additive score, rules editor and rule API have been retired. Historical
+records remain in the database for traceability. Runtime priority rules now compile to a typed AST;
+identity resolution uses a bounded phonetic inverted index, queue ordering uses a shared-memory
+mutex-protected heap, and branching workflows use a validated DAG. Open **Systems workbench**
+for identity review, expression compilation, dependencies and ledger verification.
 
-This is a Mini Project Phase I deliverable, built to survive a technical viva. It is **not** a
-production legal system.
+See [Track 4 architecture and judge walkthrough](docs/SYSTEMS_ARCHITECTURE.md) for limits,
+complexities, concurrency behavior and reproducible stress commands.
 
-## What this is not
+## Run locally on Windows
 
-JusticeGrid does not make legal or judicial decisions, does not score people (risk, bail
-eligibility, release likelihood — none of that vocabulary appears anywhere in this codebase), uses
-**no machine learning or probabilistic inference** (the engine is deterministic and fully
-explainable), and is not, and never claims to be, CCTNS, eCourts, e-Prisons, NJDG, or ICJS, nor
-does it integrate with them. All data is synthetic. See
-[`docs/00-problem-statement.md`](docs/00-problem-statement.md) and
-[`docs/11-limitations-and-ethics.md`](docs/11-limitations-and-ethics.md) for the full framing.
+Install Node.js 20, pnpm 9.15.4, and Docker Desktop. Start Docker Desktop and wait
+until its engine is running. Open PowerShell in this project folder.
 
-## Architecture at a glance
-
-- **`packages/rules-engine`** — the graded contribution. A pure, dependency-free TypeScript
-  package (no Prisma, no date libraries, no DB) that takes a plain input plus an injected `now:
-  Date` and returns a plain, explainable, byte-identical-for-identical-input result. See
-  [`docs/05-rule-engine.md`](docs/05-rule-engine.md).
-- **`packages/shared`** — Zod schemas, types, enums, and DTOs shared by the API and web app.
-- **`apps/api`** — Express 4 + Prisma 5 + PostgreSQL 16. JWT auth with rotating refresh tokens,
-  RBAC enforced server-side, hash-chained append-only audit log.
-- **`apps/web`** — React 18 + Vite + TanStack Query/Table + shadcn/ui.
-
-Full write-up: [`docs/02-architecture.md`](docs/02-architecture.md).
-
-## Prerequisites
-
-- Node.js **20 LTS** (see `.nvmrc`)
-- pnpm 9 (via `corepack enable && corepack prepare pnpm@9.15.4 --activate`)
-- Docker + Docker Compose (for Postgres, or to run the whole stack)
-
-## Quickstart
-
-```bash
-cp .env.example .env
+```powershell
+corepack enable
+corepack prepare pnpm@9.15.4 --activate
 pnpm install
-pnpm setup        # installs deps + generates the Prisma client
-pnpm db:reset      # drop → migrate → seed a fully synthetic demo dataset
-pnpm dev           # API on :4000, web on :5173
+if (!(Test-Path .env)) { Copy-Item .env.example .env }
+docker compose up -d postgres
+pnpm --filter @justicegrid/api db:generate
+pnpm --filter @justicegrid/api db:migrate:deploy
 ```
 
-Or the fully containerized path:
+The default local database port is **55432**, matching `.env.example`. If using a
+different port, set both `POSTGRES_PORT` and the port in `DATABASE_URL` in `.env`.
+Keep an existing `.env` when upgrading.
 
-```bash
-docker compose up --build
+For a **new, empty demonstration database only**, create the synthetic dataset:
+
+```powershell
+pnpm db:seed
 ```
 
-## Demo credentials
+Seeding replaces demonstration data. Existing installations only need the migration;
+the replacement queue is populated by the API's reconciliation job.
 
-Visible on the login screen when `VITE_DEMO_MODE=true`:
+Build the two shared packages, then start the development servers:
+
+```powershell
+pnpm --filter @justicegrid/shared build
+pnpm --filter @justicegrid/rules-engine build
+pnpm dev
+```
+
+Keep that terminal open. Visit [JusticeGrid](http://127.0.0.1:5173).
+The API runs on port 4000; [API documentation](http://127.0.0.1:4000/api/docs/)
+is available while it is running. Stop the servers with Ctrl+C. Restart later with
+Docker Desktop running, `docker compose up -d postgres`, and `pnpm dev`.
+
+If pnpm's toolchain lookup is unavailable but dependencies are already installed,
+run these in two PowerShell windows from the indicated folders:
+
+```powershell
+# apps/api
+node node_modules/tsx/dist/cli.mjs src/server.ts
+```
+
+```powershell
+# apps/web
+node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --strictPort
+```
+
+## Demo sign-in
 
 | Role | Email | Password |
 |---|---|---|
-| Admin | `admin@justicegrid.test` | `Admin@12345` |
-| Auditor | `auditor@justicegrid.test` | `Auditor@12345` |
-| Legal professional | `lawyer1@justicegrid.test` … `lawyer10@justicegrid.test` | `Lawyer@12345` |
+| Administrator | admin@justicegrid.test | Admin@12345 |
+| Auditor | auditor@justicegrid.test | Auditor@12345 |
+| Legal professional | lawyer1@justicegrid.test through lawyer10@justicegrid.test | Lawyer@12345 |
 
-## Scripts
+These accounts belong to the synthetic demo dataset.
 
-| Command | Does |
-|---|---|
-| `pnpm dev` | Run API + web in watch mode |
-| `pnpm build` | Build all packages/apps |
-| `pnpm test` | Run all unit/integration tests |
-| `pnpm test:e2e` | Run the Playwright E2E suite |
-| `pnpm lint` / `pnpm typecheck` | Static checks across the monorepo |
-| `pnpm db:reset` | Drop, migrate, and seed the database |
-| `pnpm db:seed` | Seed only |
-| `pnpm db:studio` | Open Prisma Studio |
-| `pnpm diagrams` | Render Mermaid diagrams to PNG |
-| `pnpm ci` | The exact sequence CI runs |
+## Using the new queue
 
-## Project status
+1. Open **Priority Queue** to see separate urgent-referral and critical-deadline lanes,
+   the combined queue, and the oldest unresolved U2/U3 work view.
+2. Open a case. Use **Workflow** to record evidence, source applicability and
+   human-confirmed review dates. Save with a reason.
+3. Use **Record case activity and link preparation** to create or edit a hearing,
+   task or document, and link it to the specific hearing/action that needs it.
+4. Acknowledge work, record its next review, assign an action owner, and resolve its
+   source evidence when complete. Acknowledgement does not complete the work.
+5. Administrators use **Queue Policy** to simulate settings before publishing a
+   complete version. Rollback creates a new version rather than editing history.
 
-Built in phases per [`JUSTICEGRID_BUILD_SPEC.md`](JUSTICEGRID_BUILD_SPEC.md) §15. Currently:
-**Phase 0 — monorepo scaffold** (this commit). See that spec for the full 13-phase plan and the
-definition of done.
+## Development and validation
 
-## Documentation
+- `pnpm build`, `pnpm typecheck`, `pnpm lint`, `pnpm test` run the project checks.
+- Engine tests inject time and run without a database. API integration tests require
+  a separate database whose name ends in `_test`; resets reject other names.
+- Create it once with `docker compose exec postgres createdb -U justicegrid justicegrid_test`.
+  If it already exists, keep it. Migrate it before the API tests:
 
-Everything under [`docs/`](docs/): problem statement, SRS, architecture, data model, API
-reference, the rule engine algorithm, security/threat model, test plan, traceability matrix, demo
-script, viva Q&A, and limitations/ethics. Written progressively as each phase lands.
+```powershell
+$env:DATABASE_URL='postgresql://justicegrid:justicegrid@127.0.0.1:55432/justicegrid_test'
+pnpm --filter @justicegrid/api db:migrate:deploy
+Remove-Item Env:DATABASE_URL
+pnpm test
+```
 
-## Known deviations from the spec
+`TEST_DATABASE_URL` can select another dedicated `_test` database. Browser tests
+must use a separately seeded test instance and must not run against the database
+while API integration tests are resetting it.
 
-- Node/toolchain: pinned to Node 20 LTS via `.nvmrc`/`engines` even though the dev machine's
-  default `node` may be newer — the API's Docker image and CI both use `node:20-alpine` /
-  `actions/setup-node@v4` with `node-version: "20"`.
-- Password hashing uses **`@node-rs/argon2`** rather than the `argon2` npm package: it ships
-  prebuilt native binaries (no local toolchain/compiler needed) while still implementing Argon2id
-  with the parameters specified in `docs/06-security.md` (`memoryCost 19456, timeCost 2,
-  parallelism 1`).
+For browser tests, create `justicegrid_browser_test` once using the same `createdb`
+command above with that database name, then prepare only that disposable database:
 
-Any other blocker encountered during the build is recorded in `docs/BLOCKERS.md` with the
-workaround applied.
+```powershell
+$env:DATABASE_URL='postgresql://justicegrid:justicegrid@127.0.0.1:55432/justicegrid_browser_test'
+pnpm --filter @justicegrid/api db:migrate:deploy
+pnpm db:seed
+Remove-Item Env:DATABASE_URL
+$env:E2E_DATABASE_URL='postgresql://justicegrid:justicegrid@127.0.0.1:55432/justicegrid_browser_test'
+$env:E2E_API_PORT='4001'
+$env:E2E_WEB_PORT='5174'
+pnpm exec playwright install chromium
+pnpm test:e2e
+```
+
+The browser test configuration starts and stops its own API/web servers and rejects
+an `E2E_DATABASE_URL` whose database name does not end in `_test`. Keep the normal
+website on ports 4000/5173. The five browser scenarios cover the complete queue flows.
+
+
+## Current documentation
+
+- [Implementation contract, source mapping and limits](docs/QUEUE_V2.md)
+- [Implementation checklist](docs/QUEUE_IMPLEMENTATION_CHECKLIST.md)
+- [India-wide legal research](docs/research/PRIORITY_QUEUE_RESEARCH.md)
+- [Researched queue design](docs/research/PRIORITY_QUEUE_V2_DESIGN.md)
+
+The numerical weights and ranking windows are prototype team policy. Automatic
+statutory entitlement calculations remain disabled: protected legal dates require
+an applicable reviewed profile and explicit human confirmation.

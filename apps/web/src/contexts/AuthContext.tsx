@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { Capability, UserDto } from "@justicegrid/shared";
 import { hasCapability, hasUnscopedCapability } from "@justicegrid/shared";
 import { api, ApiError, setAccessToken } from "../lib/api";
@@ -24,7 +32,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserDto | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const initialRefreshStarted = useRef(false);
   useEffect(() => {
+    // StrictMode replays effects in development. Reusing a rotating refresh
+    // cookie twice would revoke the session as a replay attack.
+    if (initialRefreshStarted.current) return;
+    initialRefreshStarted.current = true;
     void (async () => {
       try {
         const refreshRes = await fetch("/api/v1/auth/refresh", {

@@ -15,7 +15,7 @@ import { PriorityBadge } from "../components/ui/PriorityBadge";
 import { LoadingBlock } from "../components/ui/Feedback";
 import { formatRelative } from "../lib/format";
 
-const COLORS = { HIGH: "#dc2626", MEDIUM: "#d97706", ROUTINE: "#16a34a" };
+const COLORS = { U2: "#2563eb", U0: "#dc2626", U1: "#d97706", U3: "#16a34a" };
 
 export function DashboardPage() {
   const { user, can } = useAuth();
@@ -32,7 +32,6 @@ export function DashboardPage() {
       api.get<PriorityQueueItemDto[]>("/priority/queue", {
         page: 1,
         pageSize: 5,
-        priority: "HIGH",
       }),
     enabled: can("VIEW_FULL_PRIORITY_QUEUE"),
   });
@@ -49,7 +48,7 @@ export function DashboardPage() {
   });
 
   const dist = distributionQuery.data?.data;
-  const total = dist ? dist.HIGH + dist.MEDIUM + dist.ROUTINE : 0;
+  const total = dist ? dist.U0 + dist.U1 + dist.U2 + dist.U3 : 0;
   const openTasks = (myTasksQuery.data?.data ?? []).filter(
     (t) => t.status !== "COMPLETED" && t.status !== "CANCELLED",
   );
@@ -70,8 +69,8 @@ export function DashboardPage() {
         <StatCard icon={Briefcase} label="Cases in view" value={total || "—"} />
         <StatCard
           icon={AlertTriangle}
-          label="High priority"
-          value={dist?.HIGH ?? "—"}
+          label="Immediate attention"
+          value={dist?.U0 ?? "—"}
           accent="text-red-600"
         />
         <StatCard
@@ -102,16 +101,17 @@ export function DashboardPage() {
                     <PieChart>
                       <Pie
                         data={[
-                          { name: "High", value: dist.HIGH, key: "HIGH" },
-                          { name: "Medium", value: dist.MEDIUM, key: "MEDIUM" },
-                          { name: "Routine", value: dist.ROUTINE, key: "ROUTINE" },
+                          { name: "Immediate", value: dist.U0, key: "U0" },
+                          { name: "Time-sensitive", value: dist.U1, key: "U1" },
+                          { name: "Follow-up", value: dist.U2, key: "U2" },
+                          { name: "Scheduled", value: dist.U3, key: "U3" },
                         ]}
                         dataKey="value"
                         innerRadius={35}
                         outerRadius={65}
                         paddingAngle={2}
                       >
-                        {["HIGH", "MEDIUM", "ROUTINE"].map((key) => (
+                        {["U0", "U1", "U2", "U3"].map((key) => (
                           <Cell key={key} fill={COLORS[key as keyof typeof COLORS]} />
                         ))}
                       </Pie>
@@ -119,9 +119,10 @@ export function DashboardPage() {
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="space-y-1.5 text-sm">
-                    <LegendRow color={COLORS.HIGH} label="High" value={dist.HIGH} />
-                    <LegendRow color={COLORS.MEDIUM} label="Medium" value={dist.MEDIUM} />
-                    <LegendRow color={COLORS.ROUTINE} label="Routine" value={dist.ROUTINE} />
+                    <LegendRow color={COLORS.U0} label="Immediate" value={dist.U0} />
+                    <LegendRow color={COLORS.U1} label="Time-sensitive" value={dist.U1} />
+                    <LegendRow color={COLORS.U2} label="Follow-up" value={dist.U2} />
+                    <LegendRow color={COLORS.U3} label="Scheduled" value={dist.U3} />
                   </div>
                 </div>
               ) : null}
@@ -132,7 +133,7 @@ export function DashboardPage() {
         {can("VIEW_FULL_PRIORITY_QUEUE") && (
           <Card className="lg:col-span-2">
             <CardHeader>
-              <CardTitle>Top high-priority cases</CardTitle>
+              <CardTitle>Next cases to review</CardTitle>
               <Link
                 to="/priority"
                 className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
@@ -158,7 +159,7 @@ export function DashboardPage() {
                           {item.caseRef}
                         </Link>
                         <p className="text-xs text-slate-500">
-                          {item.personAlias} · {item.evaluation.triggeredCount} reason(s)
+                          {item.personAlias} · {item.evaluation.actions.length} reason(s)
                         </p>
                       </div>
                       <div className="flex items-center gap-3">
@@ -173,7 +174,7 @@ export function DashboardPage() {
                   ))}
                   {(queueQuery.data?.data ?? []).length === 0 && (
                     <li className="px-5 py-8 text-center text-sm text-slate-400">
-                      No HIGH priority cases right now.
+                      No cases requiring review.
                     </li>
                   )}
                 </ul>

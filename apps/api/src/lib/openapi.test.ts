@@ -10,8 +10,10 @@ describe("OpenAPI document (spec §4)", () => {
     expect(doc.info.title).toBe("JusticeGrid API");
     expect(doc.paths?.["/api/v1/cases"]).toBeDefined();
     expect(doc.paths?.["/api/v1/priority/queue"]).toBeDefined();
-    expect(doc.paths?.["/api/v1/rules/simulate"]).toBeDefined();
+    expect(doc.paths?.["/api/v1/queue-policy/simulate"]).toBeDefined();
     expect(doc.paths?.["/api/v1/reports/{name}/export.csv"]).toBeDefined();
+    expect(doc.paths?.["/api/v1/rules/simulate"]).toBeUndefined();
+    expect(doc.paths?.["/api/v1/workflows/case/{caseId}"]).toBeDefined();
     expect(doc.components?.securitySchemes?.bearerAuth).toBeDefined();
   });
 

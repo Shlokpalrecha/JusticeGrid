@@ -1,5 +1,6 @@
 import express from "express";
 import "express-async-errors";
+import { systemsRouter } from "./modules/systems/systems.routes.js";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
@@ -21,7 +22,8 @@ import { reportsRouter } from "./modules/reports/reports.routes.js";
 import { searchRouter } from "./modules/search/search.routes.js";
 import { tasksRouter } from "./modules/tasks/tasks.routes.js";
 import { documentsRouter } from "./modules/documents/documents.routes.js";
-import { rulesRouter } from "./modules/rules/rules.routes.js";
+import { queuePolicyRouter } from "./modules/queuePolicy/queuePolicy.routes.js";
+import { workflowRouter } from "./modules/workflow/workflow.routes.js";
 import { priorityRouter } from "./modules/priority/priority.routes.js";
 
 /**
@@ -86,11 +88,13 @@ export function createApp(): express.Express {
   app.use("/api/v1/auth", authRouter);
   app.use("/api/v1/audit", auditRouter);
   app.use("/api/v1/persons", personsRouter);
+  app.use("/api/v1/systems", systemsRouter);
   app.use("/api/v1/cases", casesRouter);
   app.use("/api/v1/hearings", hearingsRouter);
   app.use("/api/v1/tasks", tasksRouter);
   app.use("/api/v1/documents", documentsRouter);
-  app.use("/api/v1/rules", rulesRouter);
+  app.use("/api/v1/queue-policy", queuePolicyRouter);
+  app.use("/api/v1/workflows", workflowRouter);
   app.use("/api/v1/priority", priorityRouter);
   app.use("/api/v1/notifications", notificationsRouter);
   app.use("/api/v1/search", searchRouter);

@@ -141,42 +141,9 @@ export type DocumentType = z.infer<typeof DocumentTypeSchema>;
  * priority*, never a "risk score" or judgment about a person. HIGH means
  * "review this case's pending follow-up work first" — nothing more.
  */
-export const PRIORITY_LEVEL_VALUES = ["ROUTINE", "MEDIUM", "HIGH"] as const;
+export const PRIORITY_LEVEL_VALUES = ["U0", "U1", "U2", "U3"] as const;
 export const PriorityLevelSchema = z.enum(PRIORITY_LEVEL_VALUES);
 export type PriorityLevel = z.infer<typeof PriorityLevelSchema>;
-
-export const RULE_CATEGORY_VALUES = [
-  "HEARING",
-  "TASK",
-  "DOCUMENT",
-  "DATA_QUALITY",
-  "ASSIGNMENT",
-  "CUSTODY",
-  "ACTIVITY",
-] as const;
-export const RuleCategorySchema = z.enum(RULE_CATEGORY_VALUES);
-export type RuleCategory = z.infer<typeof RuleCategorySchema>;
-
-export const CONDITION_TYPE_VALUES = [
-  "HEARING_WITHIN_DAYS",
-  "HEARING_WITHIN_DAYS_AND_PREP_INCOMPLETE",
-  "HEARING_DATE_MISSING",
-  "TASK_OVERDUE",
-  "TASK_DUE_WITHIN_DAYS",
-  "TASK_UNASSIGNED",
-  "TASK_BLOCKED_OVER_DAYS",
-  "MANDATORY_DOCUMENT_MISSING",
-  "DOCUMENT_UNVERIFIED_OVER_DAYS",
-  "CASE_FIELD_INCOMPLETE",
-  "NO_ASSIGNEE",
-  "ORDER_NOT_REVIEWED_AFTER_DAYS",
-  "CUSTODY_DURATION_EXCEEDS_DAYS",
-  "NO_ACTIVITY_SINCE_DAYS",
-  "BAIL_APPLICATION_STALLED_DAYS",
-  "HEARING_ADJOURNED_CONSECUTIVELY",
-] as const;
-export const ConditionTypeSchema = z.enum(CONDITION_TYPE_VALUES);
-export type ConditionType = z.infer<typeof ConditionTypeSchema>;
 
 export const AUDIT_ACTION_VALUES = [
   "CREATE",

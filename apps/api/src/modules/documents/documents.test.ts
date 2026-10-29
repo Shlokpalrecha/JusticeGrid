@@ -7,7 +7,7 @@ import {
   createTestCase,
   createTestUser,
   resetDatabase,
-  seedDefaultRuleset,
+  seedQueuePolicy,
 } from "../../test/dbHelpers.js";
 import { loginAs } from "../../test/httpHelpers.js";
 
@@ -20,10 +20,10 @@ describe("documents", () => {
     // Document mutations recompute priority (spec §6.7), which requires
     // an active RulesetConfig — seed it here rather than in every `it`.
     const system = await createTestUser({ role: "ADMIN", email: "system@justicegrid.test" });
-    await seedDefaultRuleset(system.id);
+    await seedQueuePolicy(system.id);
   });
 
-  it("POST /cases/:id/documents/apply-checklist seeds the default checklist", async () => {
+  it("POST /cases/:id/documents/apply-checklist seeds optional templates without asserting universal legal requirements", async () => {
     const admin = await createTestUser({ role: "ADMIN" });
     const caseRow = await createTestCase({ createdById: admin.id, assignedToId: admin.id });
     const token = await loginAs(app, admin.email);
@@ -37,7 +37,7 @@ describe("documents", () => {
     expect(
       res.body.data.some(
         (d: { documentType: string; isMandatory: boolean }) =>
-          d.documentType === "FIR_COPY" && d.isMandatory,
+          d.documentType === "FIR_COPY" && !d.isMandatory,
       ),
     ).toBe(true);
   });

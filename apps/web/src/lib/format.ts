@@ -1,13 +1,26 @@
-import { format, formatDistanceToNow, isPast } from "date-fns";
+import { formatDistanceToNow, isPast } from "date-fns";
 
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
-  return format(new Date(iso), "d MMM yyyy");
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(iso));
 }
 
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
-  return format(new Date(iso), "d MMM yyyy, h:mm a");
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date(iso));
 }
 
 /** "in 2 days" / "3 days ago" — spec §9's priority queue relative
@@ -23,9 +36,10 @@ export function daysUntil(iso: string): number {
 }
 
 const PRIORITY_LABEL: Record<string, string> = {
-  HIGH: "High",
-  MEDIUM: "Medium",
-  ROUTINE: "Routine",
+  U0: "Immediate attention",
+  U1: "Time-sensitive review",
+  U2: "Follow-up needed",
+  U3: "Scheduled/routine",
 };
 export function priorityLabel(level: string | null | undefined): string {
   return level ? (PRIORITY_LABEL[level] ?? level) : "Not evaluated";

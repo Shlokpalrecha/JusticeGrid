@@ -1,3 +1,11 @@
+> **Priority queue v2 supersedes the original additive scoring specification.**
+> The active implementation uses U0–U3 action urgency, protected deadlines and capped
+> support weights. Old rule formulas, Rule CRUD endpoints, seeded rule fixtures and
+> HIGH/MEDIUM/ROUTINE descriptions below are historical requirements only. See
+> [the current implementation contract](docs/QUEUE_V2.md) and
+> [the researched design](docs/research/PRIORITY_QUEUE_V2_DESIGN.md).
+> The prototype safeguards in section 1 continue to apply.
+
 # JUSTICEGRID — MASTER BUILD SPECIFICATION & PROMPT
 
 > **How to use this file:** save it in an empty folder as `JUSTICEGRID_BUILD_SPEC.md`, open Claude Code in that folder, and send:

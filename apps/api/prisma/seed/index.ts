@@ -1,3 +1,4 @@
+import { seedWorkflowExamples } from "./workflows.js";
 /**
  * JusticeGrid seed script (spec §10). Deterministic via
  * `faker.seed(20251020)`; every relative date is computed from the
@@ -7,7 +8,7 @@
  * Run: `pnpm db:seed` (or automatically via `pnpm db:reset`).
  */
 import { faker } from "@faker-js/faker";
-import { DEFAULT_RULESET } from "../../src/lib/defaultRuleset.js";
+import { DEFAULT_POLICY } from "@justicegrid/rules-engine";
 import { hashPassword } from "../../src/lib/hashing.js";
 import { evaluateAndPersistCase } from "../../src/lib/priorityEvaluation.js";
 import { disconnectPrisma, prisma } from "../../src/lib/prisma.js";
@@ -26,6 +27,19 @@ async function main() {
     "[seed] Resetting synthetic data (idempotent — upserts users, recreates the rest)...",
   );
   await prisma.$transaction([
+    prisma.runtimeRuleDependency.deleteMany(),
+    prisma.runtimeTextRule.deleteMany(),
+    prisma.queuePolicy.deleteMany(),
+    prisma.workflowEdge.deleteMany(),
+    prisma.workflowNode.deleteMany(),
+    prisma.workflowGraph.deleteMany(),
+    prisma.identityDecision.deleteMany(),
+    prisma.systemRecord.deleteMany(),
+    prisma.caseRuleEvidence.deleteMany(),
+    prisma.actionNotification.deleteMany(),
+    prisma.queueEvaluation.deleteMany(),
+    prisma.workflowAction.deleteMany(),
+    prisma.legalProfile.deleteMany(),
     prisma.triggeredReason.deleteMany(),
     prisma.priorityEvaluation.deleteMany(),
     prisma.notification.deleteMany(),
@@ -42,6 +56,12 @@ async function main() {
     prisma.rule.deleteMany(),
     prisma.rulesetConfig.deleteMany(),
   ]);
+
+  await prisma.systemGeneration.upsert({
+    where: { id: "identity" },
+    create: { id: "identity", revision: 1 },
+    update: { revision: { increment: 1 } },
+  });
 
   // ── Users (spec §10: 12 total) ──────────────────────────────────────
   console.log("[seed] Creating users...");
@@ -95,44 +115,17 @@ async function main() {
   }
   console.log(`[seed] ${2 + lawyers.length} users ready.`);
 
-  // ── Ruleset (spec §6.6) ─────────────────────────────────────────────
-  console.log("[seed] Seeding the default 17-rule ruleset (v1)...");
-  const rulesetConfig = await prisma.rulesetConfig.create({
-    data: {
+  await prisma.queuePolicy.upsert({
+    where: { version: 1 },
+    update: {},
+    create: {
       version: 1,
-      highThreshold: 7,
-      mediumThreshold: 3,
+      config: DEFAULT_POLICY as never,
       isActive: true,
-      activatedById: admin.id,
-      notes: "Seed default",
+      createdById: admin.id,
+      changeReason: "Initial action queue policy",
     },
   });
-  for (const rule of DEFAULT_RULESET) {
-    const r = await prisma.rule.create({
-      data: {
-        code: rule.code,
-        name: rule.name,
-        description: rule.description,
-        category: rule.category,
-        conditionType: rule.conditionType,
-        params: rule.params as never,
-        weight: rule.weight,
-        isEnabled: true,
-        displayTemplate: rule.displayTemplate,
-        createdById: admin.id,
-        updatedById: admin.id,
-      },
-    });
-    await prisma.ruleVersion.create({
-      data: {
-        ruleId: r.id,
-        version: r.version,
-        snapshotJson: { ...rule, version: r.version } as never,
-        changedById: admin.id,
-        changeReason: "Initial seed",
-      },
-    });
-  }
 
   // ── Cases: the 6 mandatory fixtures + a realistic bulk set ─────────
   console.log("[seed] Creating the 6 mandatory fixture cases...");
@@ -141,6 +134,8 @@ async function main() {
     lawyerId: lawyers[0]!.id,
     now,
   });
+
+  await seedWorkflowExamples(prisma, fixtureCaseIds, admin.id, now);
 
   console.log("[seed] Generating bulk synthetic cases...");
   const generatedCount = await generateCases(
@@ -175,7 +170,6 @@ async function main() {
   console.log(
     `[seed]   Users: ${2 + lawyers.length} (1 ADMIN, 1 AUDITOR [${auditor.email}], ${lawyers.length} LEGAL_PROFESSIONAL)`,
   );
-  console.log(`[seed]   Ruleset: v${rulesetConfig.version}, ${DEFAULT_RULESET.length} rules`);
   console.log(
     `[seed]   Cases: ${fixtureCaseIds.length} fixtures + ${generatedCount} generated = ${evaluated} evaluated`,
   );

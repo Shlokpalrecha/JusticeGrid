@@ -13,11 +13,18 @@ export default defineConfig({
     // Forcing sequential file execution trades some wall-clock time for
     // correctness, appropriate at this suite's size.
     fileParallelism: false,
+    // Real Postgres transactions and Argon2 fixtures share the developer's
+    // machine with Docker and the browser. A five-second unit-test timeout
+    // can expire mid-transaction and let the next reset race unfinished work.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     // Minimal valid config so config/env.ts's Zod validation passes during
     // tests without requiring a real .env file or database. Never real
     // secrets — this is a fixed test-only fixture.
     env: {
-      DATABASE_URL: "postgresql://justicegrid:justicegrid@localhost:5432/justicegrid_test",
+      DATABASE_URL:
+        process.env.TEST_DATABASE_URL ??
+        "postgresql://justicegrid:justicegrid@127.0.0.1:55432/justicegrid_test",
       JWT_SECRET: "test-only-secret-not-used-in-any-real-environment",
       JWT_REFRESH_SECRET: "test-only-refresh-secret-not-used-in-any-real-env",
     },

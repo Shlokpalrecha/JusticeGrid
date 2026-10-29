@@ -18,12 +18,12 @@ function ok<T>(req: Request, res: Response, data: T, status = 200): void {
 }
 
 export async function listPersonsHandler(req: Request, res: Response): Promise<void> {
-  const persons = await personsService.listPersons();
+  const persons = await personsService.listPersons(req.user);
   ok(req, res, persons);
 }
 
 export async function getPersonHandler(req: Request, res: Response): Promise<void> {
-  const person: PersonDto = await personsService.getPerson(req.params.id as string);
+  const person: PersonDto = await personsService.getPerson(req.params.id as string, req.user);
   ok(req, res, person);
 }
 
@@ -33,6 +33,7 @@ export async function createPersonHandler(req: Request, res: Response): Promise<
 }
 
 export async function updatePersonHandler(req: Request, res: Response): Promise<void> {
+  await personsService.getPerson(req.params.id as string, req.user);
   const person = await personsService.updatePerson(
     req.params.id as string,
     req.body as PersonUpdateInput,

@@ -7,7 +7,7 @@ import {
   createTestCase,
   createTestUser,
   resetDatabase,
-  seedDefaultRuleset,
+  seedQueuePolicy,
 } from "../../test/dbHelpers.js";
 import { loginAs } from "../../test/httpHelpers.js";
 
@@ -144,7 +144,7 @@ describe("notification triggers (spec §5's NotificationType, event-driven half)
 
   it("CASE_ASSIGNED: assigning a case notifies the new assignee, but not a self-assignment", async () => {
     const admin = await createTestUser({ role: "ADMIN" });
-    await seedDefaultRuleset(admin.id);
+    await seedQueuePolicy(admin.id);
     const lawyer = await createTestUser({ role: "LEGAL_PROFESSIONAL" });
     const caseRow = await createTestCase({ createdById: admin.id });
     const adminToken = await loginAs(app, admin.email);
@@ -175,7 +175,7 @@ describe("notification triggers (spec §5's NotificationType, event-driven half)
 
   it("TASK_ASSIGNED: creating a task with an assignee notifies them", async () => {
     const admin = await createTestUser({ role: "ADMIN" });
-    await seedDefaultRuleset(admin.id);
+    await seedQueuePolicy(admin.id);
     const lawyer = await createTestUser({ role: "LEGAL_PROFESSIONAL" });
     const caseRow = await createTestCase({ createdById: admin.id, assignedToId: admin.id });
     const token = await loginAs(app, admin.email);
@@ -198,7 +198,7 @@ describe("notification triggers (spec §5's NotificationType, event-driven half)
 
   it("DOCUMENT_REQUESTED: marking a document REQUESTED notifies the case's assignee", async () => {
     const admin = await createTestUser({ role: "ADMIN" });
-    await seedDefaultRuleset(admin.id);
+    await seedQueuePolicy(admin.id);
     const lawyer = await createTestUser({ role: "LEGAL_PROFESSIONAL" });
     const caseRow = await createTestCase({ createdById: admin.id, assignedToId: lawyer.id });
     const token = await loginAs(app, admin.email);
@@ -223,47 +223,39 @@ describe("notification triggers (spec §5's NotificationType, event-driven half)
     expect(notification).not.toBeNull();
   });
 
-  it("PRIORITY_ESCALATED: a case's priority level increasing notifies its assignee", async () => {
+  it("urgent action episodes notify the owner once at each stage", async () => {
     const admin = await createTestUser({ role: "ADMIN" });
-    await seedDefaultRuleset(admin.id);
     const lawyer = await createTestUser({ role: "LEGAL_PROFESSIONAL" });
-    // Assigned + a charge + a hearing far outside every
-    // HEARING_WITHIN_DAYS window, and a recent custodyStartDate (keeps
-    // R-CUSTODY-LONG out of it) — no rule triggers, so the first
-    // evaluation is ROUTINE (0).
-    const caseRow = await createTestCase({
-      createdById: admin.id,
-      assignedToId: lawyer.id,
-      custodyStartDate: new Date(Date.now() - 30 * 86_400_000),
-    });
+    await seedQueuePolicy(admin.id);
+    const c = await createTestCase({ createdById: admin.id, assignedToId: lawyer.id });
     const token = await loginAs(app, admin.email);
-    await request(app)
-      .post(`/api/v1/cases/${caseRow.id}/charges`)
-      .set("Authorization", `Bearer ${token}`)
-      .send({ actName: "IPC", sectionCode: "302", isBailableFlag: false, severityBand: "SEVERE" });
-    const hearingRes = await request(app)
-      .post(`/api/v1/cases/${caseRow.id}/hearings`)
-      .set("Authorization", `Bearer ${token}`)
-      .send({
-        scheduledDate: new Date(Date.now() + 40 * 86_400_000).toISOString(),
-        hearingType: "BAIL_HEARING",
-      });
-    const before = await prisma.case.findUniqueOrThrow({ where: { id: caseRow.id } });
-    expect(before.currentPriorityLevel).toBe("ROUTINE");
-
-    // Moving that same hearing to within 3 days triggers R-HEARING-3D +
-    // R-HEARING-7D (4 + 2 = 6) — an escalation to MEDIUM.
-    await request(app)
-      .patch(`/api/v1/hearings/${hearingRes.body.data.id}`)
-      .set("Authorization", `Bearer ${token}`)
-      .send({ scheduledDate: new Date(Date.now() + 2 * 86_400_000).toISOString() });
-
-    const after = await prisma.case.findUniqueOrThrow({ where: { id: caseRow.id } });
-    expect(after.currentPriorityLevel).toBe("MEDIUM");
-
-    const notification = await prisma.notification.findFirst({
-      where: { userId: lawyer.id, type: "PRIORITY_ESCALATED", relatedEntityId: caseRow.id },
+    await prisma.case.update({
+      where: { id: c.id },
+      data: {
+        workflowFacts: {
+          urgentReports: [
+            {
+              id: "r",
+              kind: "MEDICAL",
+              reportedAt: new Date().toISOString(),
+              details: "Synthetic urgent report",
+              confidence: "REPORTED",
+            },
+          ],
+        },
+      },
     });
-    expect(notification).not.toBeNull();
+    for (let i = 0; i < 2; i++)
+      expect(
+        (
+          await request(app)
+            .post(`/api/v1/priority/case/${c.id}/recompute`)
+            .set("Authorization", `Bearer ${token}`)
+        ).status,
+      ).toBe(200);
+    const notices = await prisma.notification.findMany({
+      where: { userId: lawyer.id, type: "PRIORITY_ESCALATED", title: { contains: "U0" } },
+    });
+    expect(notices).toHaveLength(1);
   });
 });

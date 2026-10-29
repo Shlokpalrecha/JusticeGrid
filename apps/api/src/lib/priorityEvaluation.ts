@@ -1,352 +1,391 @@
-import type { Prisma, PrismaClient, RuleCategory } from "@prisma/client";
+import { lockCaseWorkflow } from "./workflowLinks.js";
+import { writeAuditEntry } from "./audit.js";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import {
-  buildExplanation,
-  buildQueue as engineBuildQueue,
   evaluateCase,
-  type CaseEvaluationInput,
+  canonicalJson,
+  DEFAULT_TEXT_RULES,
+  type TextRule,
   type EvaluationResult,
-  type RuleDefinition,
-  type RuleParams,
-  type RulesetConfig as EngineRulesetConfig,
-  type TriggeredReasonResult,
+  type Policy,
+  type WorkflowInput,
+  type ActionInput,
 } from "@justicegrid/rules-engine";
-import { AppError, type EvaluationTrigger } from "@justicegrid/shared";
-import { computeRequiredFieldsPresent } from "./caseFieldCompleteness.js";
+import {
+  AppError,
+  PolicySchema,
+  WorkflowFactsSchema,
+  type EvaluationTrigger,
+} from "@justicegrid/shared";
 import { createNotification } from "./notifications.js";
-
 type Client = PrismaClient | Prisma.TransactionClient;
+export const toJson = (value: unknown): Prisma.InputJsonValue =>
+  JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 
-/** Ordering for detecting a PRIORITY_ESCALATED notification (spec §5's
- * NotificationType) — only an INCREASE in band is an escalation. */
-const PRIORITY_LEVEL_RANK: Record<EvaluationResult["priorityLevel"], number> = {
-  ROUTINE: 0,
-  MEDIUM: 1,
-  HIGH: 2,
-};
-
-/**
- * This file is the ONLY place that translates between Prisma rows and
- * @justicegrid/rules-engine's plain input/output shapes (spec §4's
- * architectural rule: the engine package itself imports nothing and
- * knows nothing about Prisma). Every Phase 5 route — recompute, queue,
- * simulate — goes through the functions here rather than calling
- * `evaluateCase`/`buildQueue` directly with ad hoc mappings.
- */
-
-export function toRuleDefinition(rule: {
-  id: string;
-  code: string;
-  name: string;
-  category: RuleCategory;
-  conditionType: string;
-  params: unknown;
-  weight: number;
-  isEnabled: boolean;
-  displayTemplate: string;
-  version: number;
-}): RuleDefinition {
-  return {
-    id: rule.id,
-    code: rule.code,
-    name: rule.name,
-    category: rule.category,
-    conditionType: rule.conditionType as RuleDefinition["conditionType"],
-    params: rule.params as RuleParams,
-    weight: rule.weight,
-    isEnabled: rule.isEnabled,
-    displayTemplate: rule.displayTemplate,
-    version: rule.version,
-  };
-}
-
-export async function loadRuleDefinitions(client: Client): Promise<RuleDefinition[]> {
-  const rules = await client.rule.findMany();
-  return rules.map(toRuleDefinition);
-}
-
-export interface ActiveRulesetConfig {
-  id: string;
-  engine: EngineRulesetConfig;
-}
-
-export async function loadActiveRulesetConfig(client: Client): Promise<ActiveRulesetConfig> {
-  const config = await client.rulesetConfig.findFirst({ where: { isActive: true } });
-  if (!config) {
-    throw new AppError(
-      "INTERNAL_ERROR",
-      "No active RulesetConfig exists. An administrator must configure the ruleset before cases can be evaluated.",
-    );
-  }
-  return {
-    id: config.id,
-    engine: {
-      version: config.version,
-      highThreshold: config.highThreshold,
-      mediumThreshold: config.mediumThreshold,
-      maxScoreCap: config.maxScoreCap ?? undefined,
-    },
-  };
-}
-
-/** Count of trailing ADJOURNED outcomes starting from the most recent
- * hearing — HEARING_ADJOURNED_CONSECUTIVELY's input (spec §6.3). */
-function countConsecutiveAdjournments(hearingsDesc: { outcome: string }[]): number {
-  let count = 0;
-  for (const h of hearingsDesc) {
-    if (h.outcome !== "ADJOURNED") break;
-    count++;
-  }
-  return count;
+export async function loadActivePolicy(client: Client) {
+  const row = await client.queuePolicy.findFirst({
+    where: { isActive: true },
+    include: { textRules: { include: { incoming: true }, orderBy: { position: "asc" } } },
+  });
+  if (!row)
+    throw new AppError("INTERNAL_ERROR", "No active queue policy. Run the database migrations.");
+  const config = PolicySchema.parse(row.config);
+  const textRules: TextRule[] = row.textRules.length
+    ? row.textRules.map((r) => ({
+        id: r.ruleId,
+        when: r.condition,
+        ...(r.urgency ? { urgency: r.urgency as TextRule["urgency"] } : {}),
+        ...(r.component
+          ? { component: r.component as TextRule["component"], value: r.value! }
+          : {}),
+        dependsOn: r.incoming.map((d) => d.fromRuleId),
+      }))
+    : [...(config.textRules ?? DEFAULT_TEXT_RULES)];
+  return { ...row, config: { ...config, textRules } };
 }
 
 export async function buildCaseEvaluationInput(
   client: Client,
   caseId: string,
-): Promise<CaseEvaluationInput> {
-  const caseRow = await client.case.findUnique({ where: { id: caseId } });
-  if (!caseRow) {
-    throw new AppError("NOT_FOUND", "Case not found.");
-  }
-
-  const [chargeCount, tasks, documents, hearingsDesc] = await Promise.all([
-    client.charge.count({ where: { caseId } }),
-    client.task.findMany({ where: { caseId } }),
-    client.documentRequirement.findMany({ where: { caseId } }),
-    client.hearing.findMany({ where: { caseId }, orderBy: { scheduledDate: "desc" } }),
-  ]);
-
-  const now = Date.now();
-  const lastHearingRow = hearingsDesc.find((h) => h.scheduledDate.getTime() <= now) ?? null;
-
+  now: Date,
+): Promise<WorkflowInput> {
+  const c = await client.case.findUnique({
+    where: { id: caseId },
+    include: {
+      ruleEvidence: true,
+      workflowGraph: { include: { nodes: { orderBy: { key: "asc" } }, edges: true } },
+      charges: { orderBy: { id: "asc" } },
+      tasks: { orderBy: { id: "asc" } },
+      documents: { orderBy: { id: "asc" } },
+      hearings: { orderBy: { scheduledDate: "asc" } },
+      workflowActions: { orderBy: { key: "asc" } },
+    },
+  });
+  if (!c || c.deletedAt) throw new AppError("NOT_FOUND", "Case not found.");
+  const facts = WorkflowFactsSchema.parse(c.workflowFacts);
+  const ownerIds = [
+    c.assignedToId,
+    ...c.tasks.map((t) => t.assignedToId),
+    ...c.workflowActions.flatMap((a) => {
+      const p = a.payload as { ownerId?: string; ownerOverride?: string };
+      return [p.ownerId, p.ownerOverride];
+    }),
+  ].filter((id): id is string => !!id);
+  const owners = await client.user.findMany({
+    where: {
+      id: { in: [...new Set(ownerIds)] },
+      isActive: true,
+      deletedAt: null,
+      role: { not: "AUDITOR" },
+    },
+    select: { id: true, role: true },
+  });
+  const accessibleOwners = new Set(
+    owners.filter((u) => u.role === "ADMIN" || u.id === c.assignedToId).map((u) => u.id),
+  );
+  const activeOwner = (id: string | null | undefined) =>
+    id && accessibleOwners.has(id) ? id : null;
+  if (!Number.isFinite(now.getTime()))
+    throw new AppError("VALIDATION_ERROR", "Invalid evaluation instant.");
+  // Existing application data remains useful; it never establishes representation or legal eligibility.
+  if (
+    !facts.bailApplications.length &&
+    c.bailAppliedDate &&
+    ["APPLICATION_FILED", "HEARING_SCHEDULED"].includes(c.bailStatus)
+  )
+    facts.bailApplications.push({
+      id: "recorded-application",
+      filedAt: c.bailAppliedDate.toISOString(),
+      type: "REGULAR",
+      outcomeAt: null,
+      interveningApplication: false,
+      differentMandate: false,
+      nextReviewAt: null,
+    });
+  const profileIds = [
+    ...new Set(
+      [
+        facts.legalProfileId,
+        ...facts.confirmedReviews.map((r) => r.profileId),
+        ...c.workflowActions.map((a) => (a.payload as { profileId?: string }).profileId),
+      ].filter((id): id is string => !!id),
+    ),
+  ];
+  const profiles = await client.legalProfile.findMany({
+    where: { id: { in: profileIds } },
+    orderBy: { id: "asc" },
+  });
+  if (c.bailStatus === "GRANTED" && !facts.bailGrantedAt && !facts.releaseConfirmedAt)
+    facts.communicationBlocked = true;
   return {
-    caseId: caseRow.id,
-    caseRef: caseRow.caseRef,
-    assignedToId: caseRow.assignedToId,
-    caseStatus: caseRow.caseStatus,
-    custodyType: caseRow.custodyType,
-    custodyStartDate: caseRow.custodyStartDate?.toISOString() ?? null,
-    nextHearingDate: caseRow.nextHearingDate?.toISOString() ?? null,
-    lastHearingDate: caseRow.lastHearingDate?.toISOString() ?? null,
-    lastActivityAt: caseRow.lastActivityAt.toISOString(),
-    bailStatus: caseRow.bailStatus,
-    bailAppliedDate: caseRow.bailAppliedDate?.toISOString() ?? null,
-    consecutiveAdjournments: countConsecutiveAdjournments(hearingsDesc),
-    requiredFieldsPresent: computeRequiredFieldsPresent(caseRow, chargeCount),
-    lastHearing: lastHearingRow
+    ruleFacts: c.ruleEvidence
       ? {
-          id: lastHearingRow.id,
-          scheduledDate: lastHearingRow.scheduledDate.toISOString(),
-          orderReviewed: lastHearingRow.orderReviewed,
-          orderRecordedAt: lastHearingRow.orderReviewedAt?.toISOString() ?? null,
+          offenseSeverityIndex: c.ruleEvidence.offenseSeverityIndex,
+          bailEligibility: c.ruleEvidence.bailEligibility,
         }
-      : null,
-    tasks: tasks.map((t) => ({
-      id: t.id,
-      status: t.status,
-      dueDate: t.dueDate.toISOString(),
-      assignedToId: t.assignedToId,
-      isPreparationTask: t.isPreparationTask,
-      blockedSince: t.blockedSince?.toISOString() ?? null,
+      : undefined,
+    workflowGraph: c.workflowGraph
+      ? {
+          nodes: c.workflowGraph.nodes.map((n) => ({
+            key: n.key,
+            title: n.title,
+            status: n.status,
+            readyAt: n.readyAt?.toISOString() ?? null,
+          })),
+          edges: c.workflowGraph.edges.map((e) => ({ from: e.fromKey, to: e.toKey })),
+        }
+      : undefined,
+    legalProfiles: profiles.map((p) => ({
+      id: p.id,
+      version: p.version,
+      sourceId: p.sourceId,
+      locator: p.locator,
+      territory: p.territory,
+      procedure: p.procedure,
+      verificationNotes: p.verificationNotes,
     })),
-    documents: documents.map((d) => ({
+    caseId: c.id,
+    caseRef: c.caseRef,
+    createdAt: c.createdAt.toISOString(),
+    assignedToId: activeOwner(c.assignedToId),
+    caseStatus: c.caseStatus,
+    isArchived: c.isArchived,
+    custodyType: c.custodyType,
+    custodyStartDate: c.custodyStartDate?.toISOString() ?? null,
+    courtName: c.courtName,
+    chargeCount: c.charges.length,
+    facts,
+    bailStatus: c.bailStatus,
+    charges: c.charges.map((ch) => ({
+      id: ch.id,
+      actName: ch.actName,
+      sectionCode: ch.sectionCode,
+      description: ch.description,
+      isBailableFlag: ch.isBailableFlag,
+    })),
+    actions: c.workflowActions.map((a) => {
+      const p = actionInput(a.payload);
+      return {
+        ...p,
+        ownerId: activeOwner(p.ownerId),
+        ...(p.ownerOverride !== undefined ? { ownerOverride: activeOwner(p.ownerOverride) } : {}),
+        id: a.id,
+        key: a.key,
+        status: a.status as ActionInput["status"],
+      };
+    }),
+    hearings: c.hearings.map((h) => ({
+      id: h.id,
+      scheduledAt: h.scheduledDate.toISOString(),
+      actualAt: h.actualDate?.toISOString() ?? null,
+      outcome: h.outcome,
+      wasProduced: h.wasProduced,
+      orderExpected: h.orderExpected || h.outcome === "ORDER_PASSED",
+      orderReceivedAt: h.orderReceivedAt?.toISOString() ?? null,
+      orderReviewed: h.orderReviewed,
+      createdAt: h.createdAt.toISOString(),
+    })),
+    tasks: c.tasks.map((t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      dueAt: t.dueDate.toISOString(),
+      ownerId: activeOwner(t.assignedToId),
+      hearingId: t.hearingId,
+      actionKey: t.actionKey,
+      preparation: t.isPreparationTask,
+      blocked: t.status === "BLOCKED",
+      createdAt: t.createdAt.toISOString(),
+    })),
+    documents: c.documents.map((d) => ({
       id: d.id,
-      documentType: d.documentType,
-      isMandatory: d.isMandatory,
+      name: d.documentType,
       status: d.status,
+      mandatory: d.isMandatory,
+      hearingId: d.hearingId,
+      actionKey: d.actionKey,
       requestedAt: d.requestedAt?.toISOString() ?? null,
+      receivedAt: d.receivedAt?.toISOString() ?? null,
+      createdAt: d.createdAt.toISOString(),
     })),
   };
 }
 
-export interface EvaluateAndPersistOptions {
-  triggeredBy: EvaluationTrigger;
-  triggeredById?: string | null;
-}
-
-/**
- * Evaluates one case and persists the result (spec §6.7). Idempotent:
- * writes a new PriorityEvaluation row (+ its TriggeredReasons) only if
- * `inputHash` or `rulesetVersion` changed since the last evaluation for
- * this case — otherwise only `Case.lastEvaluatedAt` is bumped, exactly
- * the optimization spec §6.7 documents. Must be called with `tx` inside
- * the same transaction as whatever mutation triggered it (or its own
- * dedicated transaction for a standalone recompute).
- */
 export async function evaluateAndPersistCase(
   tx: Prisma.TransactionClient,
   caseId: string,
-  options: EvaluateAndPersistOptions,
+  options: {
+    triggeredBy: EvaluationTrigger;
+    triggeredById?: string | null;
+    now?: Date;
+    policy?: { config: Policy; version: number };
+    notify?: boolean;
+  },
 ): Promise<EvaluationResult> {
-  const [input, rules, { engine: config }] = await Promise.all([
-    buildCaseEvaluationInput(tx, caseId),
-    loadRuleDefinitions(tx),
-    loadActiveRulesetConfig(tx),
-  ]);
-
-  const now = new Date();
-  const evalStart = Date.now();
-  const result = evaluateCase(input, rules, config, now);
-  const durationMs = Math.max(0, Date.now() - evalStart);
-
-  const latest = await tx.priorityEvaluation.findFirst({
+  await lockCaseWorkflow(tx, caseId);
+  const now = options.now ?? new Date();
+  const policy = options.policy ?? (await loadActivePolicy(tx));
+  const input = await buildCaseEvaluationInput(tx, caseId, now);
+  const result = evaluateCase(input, policy.config, now, policy.version);
+  await tx.systemGeneration.upsert({
+    where: { id: "queue" },
+    create: { id: "queue", revision: 1 },
+    update: { revision: { increment: 1 } },
+  });
+  const latest = await tx.queueEvaluation.findFirst({
     where: { caseId },
-    orderBy: { evaluatedAt: "desc" },
+    orderBy: [{ evaluatedAt: "desc" }, { id: "desc" }],
   });
-
-  const unchanged =
-    latest !== null &&
-    latest.inputHash === result.inputHash &&
-    latest.rulesetVersion === result.rulesetVersion;
-
-  if (unchanged) {
-    await tx.case.update({ where: { id: caseId }, data: { lastEvaluatedAt: now } });
-    return result;
+  // Compare semantic output, not just facts. Clock-only transitions must be persisted.
+  if (!latest || latest.outcomeHash !== result.outcomeHash) {
+    await tx.queueEvaluation.create({
+      data: {
+        caseId,
+        policyVersion: policy.version,
+        inputSnapshot: toJson(input),
+        policySnapshot: toJson(policy.config),
+        result: toJson(result),
+        outcomeHash: result.outcomeHash,
+        evaluatedAt: now,
+        triggeredBy: options.triggeredBy,
+        triggeredById: options.triggeredById ?? null,
+      },
+    });
+    const actor = options.triggeredById
+      ? await tx.user.findUnique({
+          where: { id: options.triggeredById },
+          select: { id: true, email: true, role: true },
+        })
+      : null;
+    await writeAuditEntry(
+      tx,
+      actor ?? { id: null, email: "system@justicegrid.local", role: null },
+      { ipAddress: null, userAgent: null, requestId: `evaluation:${caseId}:${now.toISOString()}` },
+      {
+        action: "UPDATE",
+        entityType: "QueueEvaluation",
+        entityId: caseId,
+        entityLabel: input.caseRef,
+        summary: `${options.triggeredBy} queue state transition (policy ${policy.version})`,
+        before: latest?.result ?? null,
+        after: result,
+      },
+    );
   }
-
-  const evaluation = await tx.priorityEvaluation.create({
-    data: {
-      caseId,
-      evaluatedAt: now,
-      totalScore: result.totalScore,
-      rawScore: result.rawScore,
-      priorityLevel: result.priorityLevel,
-      rulesetVersion: result.rulesetVersion,
-      engineVersion: result.engineVersion,
-      inputHash: result.inputHash,
-      triggeredCount: result.reasons.length,
-      durationMs,
-      triggeredBy: options.triggeredBy,
-      triggeredById: options.triggeredById ?? null,
-    },
-  });
-
-  if (result.reasons.length > 0) {
-    await tx.triggeredReason.createMany({
-      data: result.reasons.map((reason) => ({
-        evaluationId: evaluation.id,
-        ruleId: reason.ruleId,
-        ruleCode: reason.ruleCode,
-        ruleName: reason.ruleName,
-        points: reason.points,
-        category: reason.category as RuleCategory,
-        reasonText: reason.reasonText,
-        evidenceJson: reason.evidence as Prisma.InputJsonValue,
-        orderIndex: reason.orderIndex,
-      })),
+  for (const action of result.actions) {
+    const old = input.actions.find((a) => a.key === action.key);
+    if (!old)
+      await tx.workflowAction.create({
+        data: {
+          id: action.id,
+          caseId,
+          key: action.key,
+          type: action.type,
+          status: action.status,
+          generated: action.id.startsWith("auto:"),
+          payload: toJson(actionInput(action)),
+        },
+      });
+    else if (canonicalJson(old) !== canonicalJson(actionInput(action)))
+      await tx.workflowAction.update({
+        where: { id: action.id },
+        data: { payload: toJson(actionInput(action)) },
+      });
+    if (options.notify !== false && ["U0", "U1"].includes(action.urgency)) {
+      const recipients = action.ownerId
+        ? [action.ownerId]
+        : (
+            await tx.user.findMany({
+              where: { role: "ADMIN", isActive: true, deletedAt: null },
+              select: { id: true },
+            })
+          ).map((u) => u.id);
+      const stage = `${action.urgency}:${action.dueAt && new Date(action.dueAt) <= now ? "DUE" : "APPROACHING"}:${action.status}`;
+      for (const userId of recipients) {
+        const created = await tx.actionNotification.createMany({
+          data: [
+            { episodeKey: `${caseId}:${action.key}:${action.dueAt ?? "no-date"}`, userId, stage },
+          ],
+          skipDuplicates: true,
+        });
+        if (created.count)
+          await createNotification(tx, {
+            userId,
+            type: "PRIORITY_ESCALATED",
+            title: `${action.urgency}: ${action.title}`,
+            body: `${input.caseRef}: ${action.evidence}`,
+            relatedEntityType: "Case",
+            relatedEntityId: caseId,
+          });
+      }
+    }
+  }
+  const activeKeys = new Set(result.actions.map((a) => a.key));
+  for (const a of input.actions.filter(
+    (a) =>
+      a.id.startsWith("auto:") &&
+      !activeKeys.has(a.key) &&
+      !["RESOLVED", "CANCELLED"].includes(a.status),
+  )) {
+    await tx.workflowAction.update({
+      where: { id: a.id },
+      data: {
+        status: "RESOLVED",
+        revision: { increment: 1 },
+        payload: toJson({
+          ...a,
+          status: "RESOLVED",
+          resolvedAt: now.toISOString(),
+          resolutionEvidence:
+            "Source condition no longer present; prior facts/evaluation retained.",
+        }),
+      },
     });
   }
-
+  const lastHearing = input.hearings
+    .filter(
+      (h) =>
+        Date.parse(h.actualAt ?? h.scheduledAt) <= now.getTime() &&
+        !["PENDING", "CANCELLED"].includes(h.outcome),
+    )
+    .sort(
+      (a, b) => Date.parse(b.actualAt ?? b.scheduledAt) - Date.parse(a.actualAt ?? a.scheduledAt),
+    )[0];
   await tx.case.update({
     where: { id: caseId },
     data: {
-      currentPriorityScore: result.totalScore,
-      currentPriorityLevel: result.priorityLevel,
+      currentPriorityLevel: result.included ? result.priorityLevel : null,
+      currentPriorityScore: result.included ? result.supportScore : null,
       lastEvaluatedAt: now,
+      queueNextEvaluationAt: new Date(result.nextEvaluationAt),
+      queueDeadline:
+        result.selectedAction?.orderingDeadline || result.plannedReviewAt
+          ? new Date(result.selectedAction?.orderingDeadline ?? result.plannedReviewAt!)
+          : null,
+      queueActivatedAt: result.selectedAction ? new Date(result.selectedAction.activatedAt) : null,
+      queueError: null,
+      nextHearingDate: result.nextHearingAt ? new Date(result.nextHearingAt) : null,
+      lastHearingDate: lastHearing
+        ? new Date(lastHearing.actualAt ?? lastHearing.scheduledAt)
+        : null,
     },
   });
-
-  if (
-    latest !== null &&
-    input.assignedToId &&
-    PRIORITY_LEVEL_RANK[result.priorityLevel] >
-      PRIORITY_LEVEL_RANK[latest.priorityLevel as EvaluationResult["priorityLevel"]]
-  ) {
-    await createNotification(tx, {
-      userId: input.assignedToId,
-      type: "PRIORITY_ESCALATED",
-      title: "Case priority escalated",
-      body: `Case ${input.caseRef} escalated from ${latest.priorityLevel} to ${result.priorityLevel}.`,
-      relatedEntityType: "Case",
-      relatedEntityId: caseId,
-    });
-  }
-
   return result;
 }
 
-export { engineBuildQueue as buildQueue };
-
-interface StoredEvaluationRow {
-  caseId: string;
-  rawScore: number;
-  totalScore: number;
-  priorityLevel: string;
-  rulesetVersion: number;
-  engineVersion: string;
-  inputHash: string;
-  evaluatedAt: Date;
-}
-
-interface StoredReasonRow {
-  ruleId: string | null;
-  ruleCode: string;
-  ruleName: string;
-  points: number;
-  category: string;
-  reasonText: string;
-  evidenceJson: unknown;
-  orderIndex: number;
-}
-
-/**
- * Reconstructs a full `EvaluationResult` (including `explanation`, spec
- * §6.1/§9) from a stored PriorityEvaluation + its TriggeredReason rows.
- * `explanation` isn't a PriorityEvaluation column (see
- * packages/shared/src/schemas/priority.ts's comment) — it's rebuilt via
- * the engine's own `buildExplanation`, using the *historical*
- * RulesetConfig row matching `rulesetVersion` (config versions are
- * immutable and never deleted, so this always resolves to the exact
- * thresholds that produced the stored score).
- */
-export async function reconstructEvaluationResult(
-  client: Client,
-  evaluation: StoredEvaluationRow,
-  reasonRows: StoredReasonRow[],
-): Promise<EvaluationResult> {
-  const config = await client.rulesetConfig.findUnique({
-    where: { version: evaluation.rulesetVersion },
-  });
-
-  const reasons: TriggeredReasonResult[] = [...reasonRows]
-    .sort((a, b) => a.orderIndex - b.orderIndex)
-    .map((r) => ({
-      ruleId: r.ruleId ?? "",
-      ruleCode: r.ruleCode,
-      ruleName: r.ruleName,
-      category: r.category,
-      points: r.points,
-      reasonText: r.reasonText,
-      evidence: (r.evidenceJson ?? {}) as Record<string, unknown>,
-      orderIndex: r.orderIndex,
-    }));
-
-  const priorityLevel = evaluation.priorityLevel as EvaluationResult["priorityLevel"];
-  const explanation = config
-    ? buildExplanation(reasons, evaluation.rawScore, evaluation.totalScore, priorityLevel, {
-        version: config.version,
-        highThreshold: config.highThreshold,
-        mediumThreshold: config.mediumThreshold,
-        maxScoreCap: config.maxScoreCap ?? undefined,
-      })
-    : // The historical config row is gone (should never happen — configs
-      // are never deleted) — fall back to a best-effort reconstruction
-      // rather than failing the whole read.
-      buildExplanation(reasons, evaluation.rawScore, evaluation.totalScore, priorityLevel, {
-        version: evaluation.rulesetVersion,
-        highThreshold: 7,
-        mediumThreshold: 3,
-      });
-
-  return {
-    caseId: evaluation.caseId,
-    rawScore: evaluation.rawScore,
-    totalScore: evaluation.totalScore,
-    priorityLevel,
-    reasons,
-    rulesetVersion: evaluation.rulesetVersion,
-    engineVersion: evaluation.engineVersion,
-    inputHash: evaluation.inputHash,
-    evaluatedAtIso: evaluation.evaluatedAt.toISOString(),
-    explanation,
-  };
+/** Persist facts only; derived scores must never feed the next evaluation. */
+export function actionInput(value: unknown): ActionInput {
+  const {
+    ruleTrace: _trace,
+    urgency: _u,
+    originalUrgency: _o,
+    orderingDeadline: _d,
+    supportScore: _s,
+    components: _c,
+    explanation: _e,
+    warnings: _w,
+    suppressedDuplicates: _n,
+    ...input
+  } = value as ActionInput & Record<string, unknown>;
+  return input as ActionInput;
 }

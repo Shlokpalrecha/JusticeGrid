@@ -1,56 +1,21 @@
-import { AlertTriangle, CircleDot, ShieldCheck } from "lucide-react";
-import { cn } from "../../lib/cn";
-import { priorityLabel } from "../../lib/format";
-
-const STYLES: Record<string, { className: string; Icon: typeof AlertTriangle }> = {
-  HIGH: {
-    className:
-      "bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-900",
-    Icon: AlertTriangle,
-  },
-  MEDIUM: {
-    className:
-      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-900",
-    Icon: CircleDot,
-  },
-  ROUTINE: {
-    className:
-      "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-900",
-    Icon: ShieldCheck,
-  },
+import type { PriorityLevel } from "@justicegrid/shared";
+import { Badge } from "./Badge";
+export const URGENCY_LABELS: Record<PriorityLevel, string> = {
+  U0: "Immediate attention",
+  U1: "Time-sensitive review",
+  U2: "Follow-up needed",
+  U3: "Scheduled/routine",
 };
-
-export function PriorityBadge({
-  level,
-  className,
-}: {
-  level: string | null | undefined;
-  className?: string;
-}) {
-  const style = level ? STYLES[level] : undefined;
-  if (!style) {
-    return (
-      <span
-        className={cn(
-          "inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400",
-          className,
-        )}
-      >
-        Not evaluated
-      </span>
-    );
-  }
-  const { className: colorClass, Icon } = style;
+const styles: Record<PriorityLevel, string> = {
+  U0: "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200",
+  U1: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200",
+  U2: "border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200",
+  U3: "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300",
+};
+export function PriorityBadge({ level }: { level: PriorityLevel | null }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold",
-        colorClass,
-        className,
-      )}
-    >
-      <Icon className="h-3 w-3" />
-      {priorityLabel(level)}
-    </span>
+    <Badge className={level ? styles[level] : ""}>
+      {level ? level + " · " + URGENCY_LABELS[level] : "Awaiting evaluation"}
+    </Badge>
   );
 }

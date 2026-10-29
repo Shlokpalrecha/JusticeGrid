@@ -92,9 +92,10 @@ export function CasesListPage() {
           className="w-36"
         >
           <option value="">All priorities</option>
-          <option value="HIGH">High</option>
-          <option value="MEDIUM">Medium</option>
-          <option value="ROUTINE">Routine</option>
+          <option value="U0">U0 · Immediate</option>
+          <option value="U1">U1 · Time-sensitive</option>
+          <option value="U2">U2 · Follow-up</option>
+          <option value="U3">U3 · Scheduled</option>
         </Select>
         <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
           <input

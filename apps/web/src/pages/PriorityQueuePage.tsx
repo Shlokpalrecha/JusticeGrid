@@ -1,279 +1,263 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Download, RefreshCw } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import type { PriorityQueueItemDto } from "@justicegrid/shared";
 import { api } from "../lib/api";
-import { useAuth } from "../contexts/AuthContext";
-import { Card } from "../components/ui/Card";
-import { Button } from "../components/ui/Button";
-import { Select } from "../components/ui/Input";
-import { PriorityBadge } from "../components/ui/PriorityBadge";
-import { EmptyState, ErrorBlock, LoadingBlock } from "../components/ui/Feedback";
-import { formatDate, formatRelative } from "../lib/format";
+import { Card, CardContent } from "../components/ui/Card";
+import { PriorityBadge, URGENCY_LABELS } from "../components/ui/PriorityBadge";
 import { ExplanationPanel } from "../components/ExplanationPanel";
-
-const PAGE_SIZE = 20;
-
-export function PriorityQueuePage() {
-  const { can } = useAuth();
-  const queryClient = useQueryClient();
+import { ErrorBlock, LoadingBlock } from "../components/ui/Feedback";
+import { formatDateTime } from "../lib/format";
+import { fieldClass } from "../components/WorkflowForm";
+function UrgentLane({ lane, title }: { lane: "REFERRAL" | "LEGAL_DEADLINE"; title: string }) {
   const [page, setPage] = useState(1);
-  const [priority, setPriority] = useState("");
-  const [ruleCode, setRuleCode] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  const { data, isLoading, isError, isFetching } = useQuery({
-    queryKey: ["priority-queue", page, priority, ruleCode],
+  const q = useQuery({
+    queryKey: ["priority-queue", "lane", lane, page],
+    queryFn: () => api.get<PriorityQueueItemDto[]>("/priority/queue", { lane, page, pageSize: 20 }),
+    refetchInterval: 30000,
+  });
+  return (
+    <Card>
+      <CardContent>
+        <h2 className="mb-3 font-semibold text-red-800 dark:text-red-300">{title}</h2>
+        {q.isError ? (
+          <ErrorBlock message="Urgent work could not be loaded. Refresh and contact the coordinator." />
+        ) : q.isLoading ? (
+          <LoadingBlock />
+        ) : (
+          <ul className="space-y-3">
+            {q.data?.data.map((c) => (
+              <li key={c.caseId}>
+                <Link className="text-sm font-medium underline" to={"/cases/" + c.caseId}>
+                  {c.caseRef}
+                </Link>
+                {c.evaluation.stale && (
+                  <span className="ml-2 text-xs text-red-700">STALE — verify facts</span>
+                )}
+                {c.evaluation.actions
+                  .filter(
+                    (a) =>
+                      a.urgency === "U0" &&
+                      (lane === "REFERRAL" ? a.type === "A01" : a.type !== "A01"),
+                  )
+                  .map((a) => (
+                    <p key={a.key} className="text-xs text-slate-600 dark:text-slate-400">
+                      {a.title} ·{" "}
+                      {a.orderingDeadline
+                        ? formatDateTime(a.orderingDeadline)
+                        : "Immediate referral"}
+                      {!a.ownerId ? " · UNASSIGNED" : ""}
+                    </p>
+                  ))}
+              </li>
+            ))}
+            {!q.data?.data.length && (
+              <li className="text-sm text-slate-500">No recorded actions in this lane.</li>
+            )}
+          </ul>
+        )}
+        {q.data && (q.data.meta?.total ?? 0) > 20 && (
+          <div className="mt-3 flex gap-3 text-xs">
+            <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+              Previous
+            </button>
+            <span>
+              {page} / {q.data.meta?.totalPages}
+            </span>
+            <button
+              disabled={page >= (q.data.meta?.totalPages ?? 1)}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+export function PriorityQueuePage() {
+  const [params] = useSearchParams();
+  const [priority, setPriority] = useState(""),
+    [lane, setLane] = useState(params.get("lane") === "OLDEST" ? "OLDEST" : ""),
+    [actionType, setType] = useState(""),
+    [page, setPage] = useState(1),
+    [expanded, setExpanded] = useState<string | null>(null);
+  const q = useQuery({
+    queryKey: ["priority-queue", priority, lane, actionType, page],
     queryFn: () =>
       api.get<PriorityQueueItemDto[]>("/priority/queue", {
         page,
-        pageSize: PAGE_SIZE,
-        priority: priority || undefined,
-        ruleCode: ruleCode || undefined,
+        pageSize: 20,
+        ...(priority ? { priority } : {}),
+        ...(lane ? { lane } : {}),
+        ...(actionType ? { actionType } : {}),
       }),
+    refetchInterval: 30000,
   });
-
-  const recomputeMutation = useMutation({
-    mutationFn: (caseId: string) => api.post(`/priority/case/${caseId}/recompute`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["priority-queue"] }),
-  });
-
-  function exportCsv() {
-    const items = data?.data ?? [];
-    const header = "Rank,Case Ref,Person Alias,Priority,Score,Next Hearing,Reasons,Assigned To\n";
-    const rows = items
-      .map((i) =>
-        [
-          i.rank,
-          i.caseRef,
-          i.personAlias,
-          i.evaluation.priorityLevel,
-          i.evaluation.totalScore,
-          i.nextHearingDate ?? "",
-          i.evaluation.triggeredCount,
-          i.assignedTo?.fullName ?? "Unassigned",
-        ]
-          .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-          .join(","),
-      )
-      .join("\n");
-    const blob = new Blob([header + rows], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "priority-queue.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  const items = data?.data ?? [];
-  const meta = data?.meta;
-
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-            Priority Queue
-          </h1>
-          <p className="text-sm text-slate-500">
-            Ranked, explainable workflow queue — a review aid, not a legal or judicial decision.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Select
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-xl font-semibold">Action review queue</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          Urgency → action deadline → capped support → waiting time. Each case appears once. Weights
+          are prototype team policy.
+        </p>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <UrgentLane lane="REFERRAL" title="Urgent referrals — response needed" />
+        <UrgentLane lane="LEGAL_DEADLINE" title="Critical legal / court actions" />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className="text-xs">
+          Urgency
+          <select
+            aria-label="Filter urgency"
+            className={fieldClass}
             value={priority}
             onChange={(e) => {
               setPriority(e.target.value);
               setPage(1);
             }}
-            className="w-36"
           >
-            <option value="">All priorities</option>
-            <option value="HIGH">High</option>
-            <option value="MEDIUM">Medium</option>
-            <option value="ROUTINE">Routine</option>
-          </Select>
-          <input
-            value={ruleCode}
+            <option value="">All urgency levels</option>
+            {Object.entries(URGENCY_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>
+                {k + " · " + v}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs">
+          Work view
+          <select
+            className={fieldClass}
+            value={lane}
             onChange={(e) => {
-              setRuleCode(e.target.value);
+              setLane(e.target.value);
               setPage(1);
             }}
-            placeholder="Filter by rule code (e.g. R-DOC-MISSING)"
-            className="h-9 w-64 rounded-md border border-slate-300 bg-white px-3 text-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 dark:border-slate-700 dark:bg-slate-900"
-          />
-          <Button variant="secondary" size="md" onClick={exportCsv} disabled={items.length === 0}>
-            <Download className="h-4 w-4" />
-            Export CSV
-          </Button>
-        </div>
-      </div>
-
-      {isLoading && <LoadingBlock label="Loading the priority queue..." />}
-      {isError && <ErrorBlock message="Could not load the priority queue." />}
-
-      {!isLoading && !isError && items.length === 0 && (
-        <Card>
-          <EmptyState
-            title="No cases match these filters"
-            description="Try clearing the priority band or rule code filter."
-          />
-        </Card>
-      )}
-
-      {!isLoading && !isError && items.length > 0 && (
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:bg-slate-900/50">
-                <tr>
-                  <th className="w-10 px-4 py-2.5"></th>
-                  <th className="px-2 py-2.5">Rank</th>
-                  <th className="px-2 py-2.5">Case</th>
-                  <th className="px-2 py-2.5">Person</th>
-                  <th className="px-2 py-2.5">Priority</th>
-                  <th className="px-2 py-2.5">Score</th>
-                  <th className="px-2 py-2.5">Next Hearing</th>
-                  <th className="px-2 py-2.5">Reasons</th>
-                  <th className="px-2 py-2.5">Assigned To</th>
-                  <th className="px-2 py-2.5"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <QueueRow
-                    key={item.caseId}
-                    item={item}
-                    isExpanded={expandedId === item.caseId}
-                    onToggle={() => setExpandedId(expandedId === item.caseId ? null : item.caseId)}
-                    canRecompute={can("RECORD_CASE_ACTIVITY")}
-                    onRecompute={() => recomputeMutation.mutate(item.caseId)}
-                    isRecomputing={
-                      recomputeMutation.isPending && recomputeMutation.variables === item.caseId
-                    }
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {meta && meta.total !== undefined && (
-            <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-xs text-slate-500 dark:border-slate-800">
-              <span>
-                {isFetching
-                  ? "Refreshing..."
-                  : `${meta.total} case${meta.total === 1 ? "" : "s"} total`}
-              </span>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={page === 1}
-                  onClick={() => setPage((p) => p - 1)}
-                >
-                  Previous
-                </Button>
-                <span>
-                  Page {page} of {meta.totalPages ?? 1}
-                </span>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={page >= (meta.totalPages ?? 1)}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function QueueRow({
-  item,
-  isExpanded,
-  onToggle,
-  canRecompute,
-  onRecompute,
-  isRecomputing,
-}: {
-  item: PriorityQueueItemDto;
-  isExpanded: boolean;
-  onToggle: () => void;
-  canRecompute: boolean;
-  onRecompute: () => void;
-  isRecomputing: boolean;
-}) {
-  return (
-    <>
-      <tr
-        className="cursor-pointer border-b border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-900/40"
-        onClick={onToggle}
-      >
-        <td className="px-4 py-3 text-slate-400">
-          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </td>
-        <td className="px-2 py-3 font-mono text-xs text-slate-500">#{item.rank}</td>
-        <td className="px-2 py-3">
-          <Link
-            to={`/cases/${item.caseId}`}
-            onClick={(e) => e.stopPropagation()}
-            className="font-medium text-slate-900 hover:underline dark:text-slate-100"
           >
-            {item.caseRef}
-          </Link>
-        </td>
-        <td className="px-2 py-3 text-slate-600 dark:text-slate-400">{item.personAlias}</td>
-        <td className="px-2 py-3">
-          <PriorityBadge level={item.evaluation.priorityLevel} />
-        </td>
-        <td className="px-2 py-3 font-mono text-slate-700 dark:text-slate-300">
-          {item.evaluation.totalScore}
-        </td>
-        <td className="px-2 py-3 text-slate-600 dark:text-slate-400">
-          {item.nextHearingDate ? (
-            <span title={formatDate(item.nextHearingDate)}>
-              {formatRelative(item.nextHearingDate)}
-            </span>
-          ) : (
-            "—"
+            <option value="">Priority order</option>
+            <option value="OLDEST">Oldest unresolved U2/U3 work</option>
+          </select>
+        </label>
+        <label className="text-xs">
+          Action category
+          <select
+            className={fieldClass}
+            value={actionType}
+            onChange={(e) => {
+              setType(e.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">All action categories</option>
+            {Array.from({ length: 17 }, (_, i) => "A" + String(i + 1).padStart(2, "0")).map((k) => (
+              <option key={k}>{k}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {q.isLoading ? (
+        <LoadingBlock />
+      ) : q.isError ? (
+        <ErrorBlock message="Queue unavailable. Priority is unknown until it can be loaded." />
+      ) : (
+        <div className="space-y-3">
+          {q.data?.data.map((item) => (
+            <Card key={item.caseId}>
+              <CardContent>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <Link className="font-semibold underline" to={"/cases/" + item.caseId}>
+                      #{item.rank} · {item.caseRef}
+                    </Link>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {item.personAlias} · {item.assignedTo?.fullName ?? "Unassigned"}
+                    </p>
+                  </div>
+                  <PriorityBadge level={item.evaluation.priorityLevel} />
+                </div>
+                <p className="mt-3 text-sm">
+                  {item.evaluation.selectedAction?.title ?? "Next planned review"}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
+                  <span>
+                    Due / review:{" "}
+                    {(item.evaluation.selectedAction?.orderingDeadline ??
+                    item.evaluation.plannedReviewAt)
+                      ? formatDateTime(
+                          item.evaluation.selectedAction?.orderingDeadline ??
+                            item.evaluation.plannedReviewAt,
+                        )
+                      : "Not confirmed"}
+                  </span>
+                  <span>Support {item.evaluation.supportScore}/20</span>
+                  <span>{item.evaluation.actions.length} unresolved actions</span>
+                  {lane === "OLDEST" && item.evaluation.actions.length > 0 && (
+                    <span>
+                      Oldest unresolved work since{" "}
+                      {formatDateTime(
+                        new Date(
+                          Math.min(
+                            ...item.evaluation.actions.map((a) => Date.parse(a.activatedAt)),
+                          ),
+                        ).toISOString(),
+                      )}
+                    </span>
+                  )}
+                </div>
+                {item.evaluation.stale && (
+                  <p className="mt-2 text-sm text-red-700" role="alert">
+                    Stale evaluation: verify this case before acting.
+                  </p>
+                )}
+                {item.evaluation.error && (
+                  <p className="mt-2 text-sm text-red-700" role="alert">
+                    {item.evaluation.error}
+                  </p>
+                )}
+                <button
+                  className="mt-3 text-xs font-medium underline"
+                  onClick={() => setExpanded(expanded === item.caseId ? null : item.caseId)}
+                >
+                  {expanded === item.caseId ? "Hide" : "Show"} evidence and calculation
+                </button>
+                {expanded === item.caseId && (
+                  <div className="mt-3">
+                    <ExplanationPanel evaluation={item.evaluation} />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+          {!q.data?.data.length && (
+            <p className="rounded border p-8 text-center text-sm text-slate-500">
+              No cases match these filters.
+            </p>
           )}
-        </td>
-        <td className="px-2 py-3 text-slate-600 dark:text-slate-400">
-          {item.evaluation.triggeredCount}
-        </td>
-        <td className="px-2 py-3 text-slate-600 dark:text-slate-400">
-          {item.assignedTo?.fullName ?? "Unassigned"}
-        </td>
-        <td className="px-2 py-3">
-          {canRecompute && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRecompute();
-              }}
-              isLoading={isRecomputing}
-              title="Recompute now"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
-          )}
-        </td>
-      </tr>
-      {isExpanded && (
-        <tr className="border-b border-slate-100 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/30">
-          <td colSpan={10} className="px-6 py-4">
-            <ExplanationPanel evaluation={item.evaluation} />
-          </td>
-        </tr>
+        </div>
       )}
-    </>
+      <div className="flex items-center gap-4 text-sm">
+        <button
+          disabled={page === 1}
+          onClick={() => setPage((p) => p - 1)}
+          className="rounded border px-3 py-1 disabled:opacity-40"
+        >
+          Previous
+        </button>
+        <span>
+          Page {page} of {q.data?.meta?.totalPages ?? 1} · {q.data?.meta?.total ?? 0} cases
+        </span>
+        <button
+          disabled={page >= (q.data?.meta?.totalPages ?? 1)}
+          onClick={() => setPage((p) => p + 1)}
+          className="rounded border px-3 py-1 disabled:opacity-40"
+        >
+          Next
+        </button>
+      </div>
+    </div>
   );
 }

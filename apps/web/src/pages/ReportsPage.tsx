@@ -7,7 +7,7 @@ import type {
   OverdueActionRow,
   PendingByUserRow,
   PriorityDistribution,
-  RuleTriggerFrequencyRow,
+  ActionFrequencyRow,
   UpcomingHearingRow,
 } from "@justicegrid/shared";
 import { api } from "../lib/api";
@@ -23,7 +23,7 @@ const REPORTS = [
   { name: "priority-distribution", label: "Priority Distribution" },
   { name: "completed", label: "Completed Tasks" },
   { name: "case-aging", label: "Case Aging" },
-  { name: "rule-trigger-frequency", label: "Rule Trigger Frequency" },
+  { name: "action-frequency", label: "Action Category Frequency" },
 ] as const;
 
 export function ReportsPage() {
@@ -79,7 +79,7 @@ export function ReportsPage() {
           {active === "priority-distribution" && <PriorityDistributionReport />}
           {active === "completed" && <CompletedReport />}
           {active === "case-aging" && <CaseAgingReport />}
-          {active === "rule-trigger-frequency" && <RuleTriggerFrequencyReport />}
+          {active === "action-frequency" && <ActionFrequencyReport />}
         </CardContent>
       </Card>
     </div>
@@ -191,7 +191,7 @@ function CompletedReport() {
         { header: "Case", render: (r) => r.caseRef },
         { header: "Task", render: (r) => r.title },
         { header: "Completed At", render: (r) => formatDate(r.completedAt) },
-        { header: "Completed By", render: (r) => r.completedBy ?? "—" },
+        { header: "Completed By", render: (r) => r.completedBy ?? "â€”" },
       ]}
     />
   );
@@ -205,22 +205,22 @@ function CaseAgingReport() {
       columns={[
         { header: "Case", render: (r) => r.caseRef },
         { header: "Custody Start", render: (r) => formatDate(r.custodyStartDate) },
-        { header: "Days in Custody", render: (r) => r.daysInCustody ?? "—" },
-        { header: "Priority", render: (r) => r.priorityLevel ?? "—" },
+        { header: "Days in Custody", render: (r) => r.daysInCustody ?? "â€”" },
+        { header: "Priority", render: (r) => r.priorityLevel ?? "â€”" },
         { header: "Assigned To", render: (r) => r.assignedTo ?? "Unassigned" },
       ]}
     />
   );
 }
 
-function RuleTriggerFrequencyReport() {
+function ActionFrequencyReport() {
   return (
-    <ReportTable<RuleTriggerFrequencyRow>
-      queryKey={["reports", "rule-trigger-frequency"]}
-      path="/reports/rule-trigger-frequency"
+    <ReportTable<ActionFrequencyRow>
+      queryKey={["reports", "action-frequency"]}
+      path="/reports/action-frequency"
       columns={[
-        { header: "Rule", render: (r) => `${r.ruleCode} — ${r.ruleName}` },
-        { header: "Cases Triggering", render: (r) => <strong>{r.triggerCount}</strong> },
+        { header: "Action category", render: (r) => `${r.actionType} â€” ${r.actionName}` },
+        { header: "Cases with unresolved work", render: (r) => <strong>{r.triggerCount}</strong> },
       ]}
     />
   );
@@ -237,13 +237,16 @@ function PriorityDistributionReport() {
   return (
     <div className="flex gap-6 p-5 text-sm">
       <span className="text-red-600">
-        HIGH: <strong>{dist.HIGH}</strong>
+        U0 — Immediate: <strong>{dist.U0}</strong>
       </span>
       <span className="text-amber-600">
-        MEDIUM: <strong>{dist.MEDIUM}</strong>
+        U1 — Time-sensitive: <strong>{dist.U1}</strong>
+      </span>
+      <span className="text-blue-600">
+        U2 — Follow-up: <strong>{dist.U2}</strong>
       </span>
       <span className="text-green-600">
-        ROUTINE: <strong>{dist.ROUTINE}</strong>
+        U3 — Scheduled: <strong>{dist.U3}</strong>
       </span>
     </div>
   );
